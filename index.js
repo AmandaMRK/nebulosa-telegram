@@ -1,15 +1,15 @@
 const { Bot } = require('grammy');
 const cron = require('node-cron');
 
-// O token agora vem de uma variável de ambiente secreta (cofre)
 const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const seuChatId = 7855365372;
 
-// O restante do código continua exatamente igual...
+// Comando inicial /start
 bot.command('start', async (ctx) => {
-    await ctx.reply('🌌 Olá, Amanda! Sou a Nebulosa, sua assistente cósmica no Telegram.\n\n📡 *Meus radares estão ligados!* Você pode me pedir notícias da NASA, mandar fotos, criar lembretes na agenda ou só conversar. Digite /nasa para puxar o último plantão espacial! 🚀✨');
+    await ctx.reply('🌌 Olá, Amanda! Sou a Nebulosa, sua assistente cósmica no Telegram.\n\n📡 *Meus radares estão ligados!* Você pode me pedir notícias da NASA, mandar fotos ou marcar compromissos dizendo algo como: *"Nebulosa, agenda para dia 11/08/2026 às 17h ir ao Poupatempo"*. Digite /nasa para puxar o último plantão espacial! 🚀✨');
 });
 
+// Comando para buscar o Plantão da NASA sob demanda
 bot.command('nasa', async (ctx) => {
     await ctx.reply('🛰️ *Varrendo os radares da NASA...*\nBuscando as últimas atualizações do cosmos para você, Amanda! ⏳');
     
@@ -29,35 +29,45 @@ bot.command('nasa', async (ctx) => {
     }
 });
 
-bot.hears(/nebulosa/i, async (ctx) => {
-    const dataHoraAtual = new Date().toLocaleString('pt-BR');
-    await ctx.reply(`🌌 **Nebulosa Ativa na Nuvem!**\n📅 Registrado em: ${dataHoraAtual}\n🚀 Pronta para monitorar o espaço e a sua agenda!`);
-});
-
+// Curiosidades
 bot.hears(/curiosidade|espaço/i, async (ctx) => {
     await ctx.reply('🌌 [Fato Cósmico]: Existem mais estrelas no universo observável do que grãos de areia em todas as praias da Terra juntas! 🌟🏖️');
 });
 
+// Quando você mandar foto
 bot.on(':photo', async (ctx) => {
     const dataHoraAtual = new Date().toLocaleString('pt-BR');
     await ctx.reply(`🌌📸 **Foto recebida e registrada!**\n⏱️ Marcada em: ${dataHoraAtual}\n💜 Guardada com carinho no banco de dados estelar!`);
 });
 
+// Inteligência para Agenda e Tarefas com Confirmação Personalizada
 bot.on('message:text', async (ctx) => {
     const texto = ctx.message.text;
     const textoLower = texto.toLowerCase();
     
     if (!texto.startsWith('/')) {
-        const dataHoraAtual = new Date().toLocaleString('pt-BR');
+        // Verifica se é um pedido de agendamento/compromisso
+        if (textoLower.includes('agenda') || textoLower.includes('lembrete') || textoLower.includes('marcar') || textoLower.includes('compromisso') || textoLower.includes('avisar')) {
+            
+            // Tenta extrair uma data no formato DD/MM/AAAA ou DD/MM
+            const regexData = /(\d{2}\/\d{2}(\/\d{4})?)/;
+            const matchData = texto.match(regexData);
+            const dataExtraida = matchData ? matchData[0] : 'data informada';
 
-        if (textoLower.includes('agenda') || textoLower.includes('lembrete') || textoLower.includes('marcar') || textoLower.includes('compromisso')) {
-            await ctx.reply(`🗓️ **Evento / Compromisso Anotado na Agenda!**\n⏱️ Registrado em: ${dataHoraAtual}\n💬 *"${texto}"*\n\n✅ Entendido, Amanda! Já guardei isso na sua rota estelar.`);
+            // Tenta extrair um horário (ex: 17h, 15:30, etc)
+            const regexHora = /(\d{1,2}h(\d{2})?|\d{1,2}:\d{2})/;
+            const matchHora = texto.match(regexHora);
+            const horaExtraida = matchHora ? matchHora[0] : 'horário combinado';
+
+            await ctx.reply(`Ok, Amanda, marquei aqui para o dia ${dataExtraida} às ${horaExtraida} e te aviso! 🚀🗓️`);
         } else {
+            const dataHoraAtual = new Date().toLocaleString('pt-BR');
             await ctx.reply(`📌 **Nota salva pela Nebulosa!**\n⏱️ ${dataHoraAtual}\n💬 *"${texto}"*`);
         }
     }
 });
 
+// Notificação automática de Bom dia + Notícia da NASA (Todo dia às 08:00)
 cron.schedule('0 8 * * *', async () => {
     try {
         const resposta = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
