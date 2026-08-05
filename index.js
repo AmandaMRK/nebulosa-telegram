@@ -1,20 +1,19 @@
 const { Bot } = require('grammy');
 const cron = require('node-cron');
 
-const bot = new Bot('8949158876:AAHGqLkguGy096vBhIV8cANA2go4dV3BKko');
+// O token agora vem de uma variável de ambiente secreta (cofre)
+const bot = new Bot(process.env.TELEGRAM_TOKEN);
 const seuChatId = 7855365372;
 
-// Comando inicial /start
+// O restante do código continua exatamente igual...
 bot.command('start', async (ctx) => {
     await ctx.reply('🌌 Olá, Amanda! Sou a Nebulosa, sua assistente cósmica no Telegram.\n\n📡 *Meus radares estão ligados!* Você pode me pedir notícias da NASA, mandar fotos, criar lembretes na agenda ou só conversar. Digite /nasa para puxar o último plantão espacial! 🚀✨');
 });
 
-// Comando para buscar o Plantão da NASA sob demanda
 bot.command('nasa', async (ctx) => {
     await ctx.reply('🛰️ *Varrendo os radares da NASA...*\nBuscando as últimas atualizações do cosmos para você, Amanda! ⏳');
     
     try {
-        // Pega a foto/notícia do dia oficial da API pública da NASA
         const resposta = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
         const dados = await resposta.json();
 
@@ -30,24 +29,20 @@ bot.command('nasa', async (ctx) => {
     }
 });
 
-// Palavra-chave Nebulosa
 bot.hears(/nebulosa/i, async (ctx) => {
     const dataHoraAtual = new Date().toLocaleString('pt-BR');
     await ctx.reply(`🌌 **Nebulosa Ativa na Nuvem!**\n📅 Registrado em: ${dataHoraAtual}\n🚀 Pronta para monitorar o espaço e a sua agenda!`);
 });
 
-// Curiosidades
 bot.hears(/curiosidade|espaço/i, async (ctx) => {
     await ctx.reply('🌌 [Fato Cósmico]: Existem mais estrelas no universo observável do que grãos de areia em todas as praias da Terra juntas! 🌟🏖️');
 });
 
-// Quando você mandar foto
 bot.on(':photo', async (ctx) => {
     const dataHoraAtual = new Date().toLocaleString('pt-BR');
     await ctx.reply(`🌌📸 **Foto recebida e registrada!**\n⏱️ Marcada em: ${dataHoraAtual}\n💜 Guardada com carinho no banco de dados estelar!`);
 });
 
-// Inteligência para Agenda e Tarefas
 bot.on('message:text', async (ctx) => {
     const texto = ctx.message.text;
     const textoLower = texto.toLowerCase();
@@ -63,7 +58,6 @@ bot.on('message:text', async (ctx) => {
     }
 });
 
-// Notificação automática de Bom dia + Notícia da NASA (Todo dia às 08:00)
 cron.schedule('0 8 * * *', async () => {
     try {
         const resposta = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
@@ -81,6 +75,5 @@ cron.schedule('0 8 * * *', async () => {
     }
 });
 
-// Inicia o bot
 bot.start();
-console.log('🌌🚀 Nebulosa com Radar da NASA iniciada com sucesso!')
+console.log('🌌🚀 Nebulosa com Radar da NASA iniciada com sucesso!');
