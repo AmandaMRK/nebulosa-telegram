@@ -1,0 +1,13 @@
+{
+  "name": "nebulosa-telegram",
+  "version": "1.0.0",
+  "description": "Assistente virtual Nebulosa",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "grammy": "^1.21.1",
+    "node-cron": "^3.0.3"
+  }
+}
