@@ -5,7 +5,6 @@ const axios = require('axios');
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-let listaDeTarefas = [];
 
 function getCalendarClient() {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -30,7 +29,7 @@ cron.schedule('0 8 * * *', async () => {
         const hojeInicio = new Date().toISOString();
         const resAgenda = await calendar.events.list({ calendarId: 'primary', timeMin: hojeInicio, singleEvents: true, orderBy: 'startTime', maxResults: 10 });
         
-        const eventosHoje = resAgenda.data.items.filter(e => e.summary !== 'Parabéns!');
+        const eventosHoje = resAgenda.data.items.filter(e => e.summary && !e.summary.includes('Parabéns!'));
         if (eventosHoje.length > 0) {
             msg += `📅 *Agenda:* \n`;
             eventosHoje.forEach(e => msg += `- ${e.summary}\n`);
@@ -49,11 +48,11 @@ bot.on('text', async (ctx) => {
     const t = texto.toLowerCase();
     const calendar = getCalendarClient();
 
-    // Mostrar Agenda (Filtro para ignorar os "Parabéns!")
+    // Mostrar Agenda
     if (t.includes('agenda') || t.includes('mostra')) {
         try {
             const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 15, singleEvents: true, orderBy: 'startTime' });
-            const eventosFiltrados = res.data.items.filter(e => e.summary !== 'Parabéns!');
+            const eventosFiltrados = res.data.items.filter(e => e.summary && !e.summary.includes('Parabéns!'));
             
             if (eventosFiltrados.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉');
             
@@ -69,7 +68,7 @@ bot.on('text', async (ctx) => {
         }
     }
 
-    // Marcar compromisso com data DD/MM/AAAA corrigida
+    // Marcar compromisso (Blindado contra erros de data)
     if (t.includes('marca')) {
         try {
             const regexData = /(\d{2})\/(\d{2})\/(\d{4})/;
@@ -77,13 +76,10 @@ bot.on('text', async (ctx) => {
 
             let dataFormatada = '';
             if (matchData) {
-                const dia = matchData[1];
-                const mes = matchData[2];
-                const ano = matchData[3];
-                dataFormatada = `${ano}-${mes}-${dia}`;
+                dataFormatada = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
             } else {
-                const hoje = new Date();
-                dataFormatada = hoje.toISOString().split('T')[0];
+                // Se não achar a data no formato DD/MM/AAAA, pega o dia de hoje automaticamente para não dar erro
+                dataFormatada = new Date().toISOString().split('T')[0];
             }
 
             let resumo = texto
@@ -104,7 +100,7 @@ bot.on('text', async (ctx) => {
                 }
             });
 
-            return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi marcado para o dia ${matchData ? matchData[0] : 'hoje'}. 🧿💜`);
+            return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi salvo com sucesso na sua agenda! 🧿💜`);
         } catch (err) { 
             console.error('Erro detalhado ao marcar:', err);
             ctx.reply('Ops, deu um errinho ao tentar salvar no Google Calendar. Tenta de novo? 😿'); 
