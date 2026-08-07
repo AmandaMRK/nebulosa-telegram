@@ -1,22 +1,16 @@
 const { Telegraf } = require('telegraf');
-const { google } = require('googleapis');
 const cron = require('node-cron');
 const axios = require('axios');
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-function getCalendarClient() {
-    const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-    const token = JSON.parse(process.env.GOOGLE_TOKEN);
-    const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
-    oAuth2Client.setCredentials(token);
-    return google.calendar({ version: 'v3', auth: oAuth2Client });
-}
+// Bancos de dados internos da Nebulosa (salvos na memória)
+let minhaAgenda = [];
+let listaDeTarefas = [];
 
 // -----------------------------------------------------------------
-// 1. ROTINA DE 08:00 (NASA + RESUMO)
+// 1. ROTINA DE 08:00 (NASA + RESUMO DO DIA) 🚀📅
 // -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
@@ -25,87 +19,97 @@ cron.schedule('0 8 * * *', async () => {
         const d = resNasa.data;
         let msg = `✨ *Bom dia, Amanda!* ✨\n\nNotícia espacial: *${d.title}* 🌌\n\n[Veja a foto aqui](${d.url})\n\n`;
 
-        const calendar = getCalendarClient();
-        const hojeInicio = new Date().toISOString();
-        const resAgenda = await calendar.events.list({ calendarId: 'primary', timeMin: hojeInicio, singleEvents: true, orderBy: 'startTime', maxResults: 10 });
-        
-        const eventosHoje = resAgenda.data.items.filter(e => e.summary && !e.summary.includes('Parabéns!'));
-        if (eventosHoje.length > 0) {
-            msg += `📅 *Agenda:* \n`;
-            eventosHoje.forEach(e => msg += `- ${e.summary}\n`);
+        if (minhaAgenda.length > 0) {
+            msg += `📅 *Seus compromissos salvos:*\n`;
+            minhaAgenda.forEach((item, index) => {
+                msg += `${index + 1}. *${item.compromisso}* (${item.data})\n`;
+            });
         } else {
-            msg += `📅 *Agenda livre hoje!* 🎉`;
+            msg += `📅 *Nenhum compromisso na agenda hoje!* 🎉`;
         }
+
         bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
     } catch (e) { console.error(e); }
 });
 
 // -----------------------------------------------------------------
-// 2. COMANDOS (TEXTO)
+// 2. COMANDOS DA NEBULOSA 💜
 // -----------------------------------------------------------------
 bot.on('text', async (ctx) => {
     const texto = ctx.message.text;
     const t = texto.toLowerCase();
-    const calendar = getCalendarClient();
 
-    // Mostrar Agenda
-    if (t.includes('agenda') || t.includes('mostra')) {
-        try {
-            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 15, singleEvents: true, orderBy: 'startTime' });
-            const eventosFiltrados = res.data.items.filter(e => e.summary && !e.summary.includes('Parabéns!'));
-            
-            if (eventosFiltrados.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉');
-            
-            let msg = '📅 *Sua lista de compromissos:*\n\n';
-            eventosFiltrados.forEach((e, i) => {
-                const data = e.start.date || new Date(e.start.dateTime).toLocaleDateString('pt-BR');
-                msg += `${i + 1}. *${e.summary}* (${data}) ⏳\n`;
+    // A. Mostrar Agenda
+    if (t.includes('agenda') || t.includes('mostra') || t.includes('eventos')) {
+        if (minhaAgenda.length === 0) {
+            return ctx.reply('Sua agenda interna está limpinha! 🎉 Nada por aqui. ☁️');
+        }
+        
+        let msg = '📅 *Sua Agenda Interna:*\n\n';
+        minhaAgenda.forEach((item, index) => {
+            msg += `${index + 1}. *${item.compromisso}* — ${item.data} ⏳\n`;
+        });
+        msg += '\n*Dica:* Para apagar, digite "apagar agenda [número]" 🧹';
+        return ctx.replyWithMarkdown(msg);
+    }
+
+    // B. Apagar Compromisso da Agenda
+    if (t.includes('apagar agenda')) {
+        const num = parseInt(t.match(/\d+/));
+        if (!isNaN(num) && minhaAgenda[num - 1]) {
+            const removido = minhaAgenda.splice(num - 1, 1);
+            return ctx.reply(`🧹 Prontinho! Apaguei "${removido[0].compromisso}" da sua agenda. 👋💜`);
+        }
+        return ctx.reply('Não achei esse número na sua agenda, Amanda. 🧐');
+    }
+
+    // C. Marcar Compromisso (Ex: "Nebulosa, marca poupatempo 11/08/2026")
+    if (t.includes('marca')) {
+        const regexData = /(\d{2})\/(\d{2})\/(\d{4})/;
+        const matchData = texto.match(regexData);
+        
+        let dataCompromisso = matchData ? matchData[0] : 'Hoje';
+
+        let resumo = texto
+            .replace(/nebulosa,?/gi, '')
+            .replace(/marca/gi, '')
+            .replace(/para mim/gi, '')
+            .replace(regexData, '')
+            .trim();
+
+        if (!resumo) resumo = 'Compromisso';
+
+        minhaAgenda.push({ compromisso: resumo, data: dataCompromisso });
+        return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi salvo na sua agenda para o dia ${dataCompromisso}! 🧿💜`);
+    }
+
+    // D. Sistema de Tarefas (To-Do)
+    if (t.includes('tarefa') || t.includes('anotar')) {
+        const itemTarefa = texto.replace(/nebulosa,?/gi, '').replace(/tarefa/gi, '').replace(/anotar/gi, '').trim();
+        if (itemTarefa) {
+            listaDeTarefas.push(itemTarefa);
+            return ctx.reply(`Anotado na lista de tarefas! 📝 "${itemTarefa}" guardado com sucesso. 💜`);
+        } else {
+            if (listaDeTarefas.length === 0) return ctx.reply('Sua lista de tarefas está vazia! 📋✨');
+            let msgLista = '📋 *Sua Lista de Tarefas:*\n\n';
+            listaDeTarefas.forEach((item, index) => {
+                msgLista += `${index + 1}. ${item}\n`;
             });
-            return ctx.replyWithMarkdown(msg);
-        } catch (err) { 
-            console.error(err);
-            ctx.reply('Erro ao buscar agenda. 😿'); 
+            msgLista += '\n*Dica:* Para concluir, digite "remover tarefa [número]" 🧹';
+            return ctx.replyWithMarkdown(msgLista);
         }
     }
 
-    // Marcar compromisso (Blindado contra erros de data)
-    if (t.includes('marca')) {
-        try {
-            const regexData = /(\d{2})\/(\d{2})\/(\d{4})/;
-            const matchData = texto.match(regexData);
-
-            let dataFormatada = '';
-            if (matchData) {
-                dataFormatada = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
-            } else {
-                // Se não achar a data no formato DD/MM/AAAA, pega o dia de hoje automaticamente para não dar erro
-                dataFormatada = new Date().toISOString().split('T')[0];
-            }
-
-            let resumo = texto
-                .replace(/nebulosa,?/gi, '')
-                .replace(/marca/gi, '')
-                .replace(/para mim/gi, '')
-                .replace(regexData, '')
-                .trim();
-
-            if (!resumo) resumo = 'Compromisso';
-
-            await calendar.events.insert({
-                calendarId: 'primary',
-                requestBody: {
-                    summary: resumo,
-                    start: { date: dataFormatada },
-                    end: { date: dataFormatada }
-                }
-            });
-
-            return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi salvo com sucesso na sua agenda! 🧿💜`);
-        } catch (err) { 
-            console.error('Erro detalhado ao marcar:', err);
-            ctx.reply('Ops, deu um errinho ao tentar salvar no Google Calendar. Tenta de novo? 😿'); 
+    // E. Remover Tarefa
+    if (t.includes('remover tarefa')) {
+        const num = parseInt(t.match(/\d+/));
+        if (!isNaN(num) && listaDeTarefas[num - 1]) {
+            const removido = listaDeTarefas.splice(num - 1, 1);
+            return ctx.reply(`✅ Tarefa "${removido}" concluída e removida! 🎉💜`);
         }
+        return ctx.reply('Não achei esse número na sua lista de tarefas, Amanda. 🧐');
     }
 });
 
 bot.launch();
+console.log('Nebulosa interna rodando perfeitamente!');
