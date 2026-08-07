@@ -54,11 +54,20 @@ bot.on('text', async (ctx) => {
         }
     }
 
-    // 2. Apagar evento por número
+    // 2. Apagar evento por número (Corrigido e mais robusto)
     if (t.includes('apagar')) {
         try {
             const num = parseInt(t.match(/\d+/));
-            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
+            if (isNaN(num)) return ctx.reply('Amanda, preciso de um número. Exemplo: "apagar 1" 🧐');
+            
+            const res = await calendar.events.list({ 
+                calendarId: 'primary', 
+                timeMin: (new Date()).toISOString(), 
+                maxResults: 10, 
+                singleEvents: true, 
+                orderBy: 'startTime' 
+            });
+            
             const evento = res.data.items[num - 1];
             if (evento) {
                 await calendar.events.delete({ calendarId: 'primary', eventId: evento.id });
@@ -66,27 +75,25 @@ bot.on('text', async (ctx) => {
             }
             return ctx.reply('Não achei esse número na lista, Amanda. Tente dizer "apagar 1" por exemplo! 🧐');
         } catch (err) {
+            console.error(err);
             return ctx.reply('Erro ao tentar apagar o evento. 😢');
         }
     }
 
-    // 3. Marcar Compromisso (Com suporte a horário e repetição fixa)
+    // 3. Marcar Compromisso (Com suporte a horário, repetição fixa e lembretes)
     if (t.includes('marca')) {
-        // Tenta achar hora (ex: 17h ou 17:00)
         const regexHora = /(\d{2})[h:](\d{2})?/;
         const matchHora = texto.match(regexHora);
         
-        let horaStr = '09:00'; // padrão se não achar
+        let horaStr = '09:00';
         if (matchHora) {
             const h = matchHora[1];
             const m = matchHora[2] || '00';
             horaStr = `${h}:${m}`;
         }
 
-        // Verifica se é fixo / toda semana
         const éFixo = t.includes('fixo') || t.includes('toda') || t.includes('toda semana');
         
-        // Exemplo simplificado para pegar o próximo dia da semana ou data DD/MM
         const regexData = /(\d{2})\/(\d{2})(?:\/(\d{4}))?/;
         const matchData = texto.match(regexData);
 
@@ -97,15 +104,11 @@ bot.on('text', async (ctx) => {
             const ano = matchData[3] || '2026';
             dataFormatada = `${ano}-${mes}-${dia}`;
         } else {
-            // Se não passou data exata mas passou dia da semana (ex: quinta), pega a próxima data correspondente
-            // Para simplificar e garantir que funcione agora, vamos usar a data de hoje/amanhã se não houver data explícita,
-            // ou você pode mandar no formato: "Nebulosa, marca moujario dia 13/08/2026 17h fixo"
             const hoje = new Date();
             dataFormatada = hoje.toISOString().split('T')[0];
         }
 
         const startDateTime = `${dataFormatada}T${horaStr}:00-03:00`;
-        // Fim 1 hora depois
         const [hNum, mNum] = horaStr.split(':');
         const endH = String(Number(hNum) + 1).padStart(2, '0');
         const endDateTime = `${dataFormatada}T${endH}:${mNum}:00-03:00`;
@@ -131,7 +134,6 @@ bot.on('text', async (ctx) => {
                 summary: summary,
                 start: { dateTime: startDateTime, timeZone: 'America/Sao_Paulo' },
                 end: { dateTime: endDateTime, timeZone: 'America/Sao_Paulo' },
-                // Configura notificações automáticas do Google: 1 dia antes (1440 min) e 2 horas antes (120 min)
                 reminders: {
                     useDefault: false,
                     overrides: [
@@ -141,7 +143,6 @@ bot.on('text', async (ctx) => {
                 }
             };
 
-            // Se for fixo, adiciona regra de repetição semanal
             if (éFixo) {
                 eventBody.recurrence = ['RRULE:FREQ=WEEKLY'];
             }
