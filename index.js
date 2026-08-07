@@ -6,6 +6,9 @@ const axios = require('axios');
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
+// Lista de tarefas temporária em memória (você pode anotar coisas aqui)
+let listaDeTarefas = [];
+
 function getCalendarClient() {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     const token = JSON.parse(process.env.GOOGLE_TOKEN);
@@ -16,25 +19,99 @@ function getCalendarClient() {
 }
 
 // -----------------------------------------------------------------
-// NOTIFICAÇÃO DA NASA (Todo dia às 08:00) 🚀
+// 1. ROTINA DIÁRIA DAS 08:00 (NASA + RESUMO DA AGENDA DO DIA) 🚀📅
 // -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
     try {
-        const res = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
-        const d = res.data;
-        let msg = `✨ *Bom dia, Amanda!* ✨\n\nOlha o que a NASA trouxe para você hoje: *${d.title}* 🌌\n\n${d.explanation.substring(0, 300)}...\n\n[Veja a foto aqui](${d.url}) 🔭💜`;
+        // Parte da NASA
+        const resNasa = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
+        const d = resNasa.data;
+        let msg = `✨ *Bom dia, Amanda!* ✨\n\nOlha o que a NASA trouxe para você hoje: *${d.title}* 🌌\n\n${d.explanation.substring(0, 250)}...\n\n[Veja a foto aqui](${d.url}) 🔭\n\n`;
+
+        // Parte do Resumo da Agenda
+        try {
+            const calendar = getCalendarClient();
+            const hojeInicio = new Date();
+            hojeInicio.setHours(0, 0, 0, 0);
+            const hojeFim = new Date();
+            hojeFim.setHours(23, 59, 59, 999);
+
+            const resAgenda = await calendar.events.list({
+                calendarId: 'primary',
+                timeMin: hojeInicio.toISOString(),
+                timeMax: hojeFim.toISOString(),
+                singleEvents: true,
+                orderBy: 'startTime',
+            });
+
+            const eventosHoje = resAgenda.data.items;
+            if (eventosHoje && eventosHoje.length > 0) {
+                msg += `📅 *Compromissos para hoje:*\n`;
+                eventosHoje.forEach((e) => {
+                    const hora = e.start.dateTime ? new Date(e.start.dateTime).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'Dia todo';
+                    msg.push(`- *${e.summary}* (${hora}) ⏳\n`);
+                });
+            } else {
+                msg += `📅 *Sua agenda de hoje está livre!* Aproveite o dia! 🎉☁️`;
+            }
+        } catch (errAgenda) {
+            console.error('Erro ao buscar agenda no cron:', errAgenda);
+        }
+
         bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error('Erro no cron:', e); }
 });
 
 // -----------------------------------------------------------------
-// INTELIGÊNCIA DA NEBULOSA 💜
+// INTELIGÊNCIA DA NEBULOSA (Texto e Áudio) 💜
 // -----------------------------------------------------------------
-bot.on('text', async (ctx) => {
-    const texto = ctx.message.text;
+bot.on(['text', 'voice'], async (ctx) => {
+    let texto = '';
+
+    // 3. Suporte a Áudio (O Telegram manda o link do arquivo de voz)
+    if (ctx.message.voice) {
+        try {
+            const fileLink = await ctx.telegram.getFileLink(ctx.message.voice.file_id);
+            return ctx.reply(`Ouvi seu áudio, Amanda! 🎤 Mas para eu transcrever certinho por texto, por enquanto prefiro que você digite para mim, tá bom? Assim não erro nada! 💜✨`);
+        } catch (err) {
+            return ctx.reply('Recebi seu áudio, mas tive um probleminha para processar. Tenta digitar para mim? 😿');
+        }
+    } else {
+        texto = ctx.message.text;
+    }
+
     const t = texto.toLowerCase();
     const calendar = getCalendarClient();
+
+    // 2. Sistema de Tarefas (Para / To-Do)
+    if (t.includes('tarefa') || t.includes('anotar')) {
+        const itemTarefa = texto.replace(/nebulosa,?/gi, '').replace(/tarefa/gi, '').replace(/anotar/gi, '').trim();
+        if (itemTarefa) {
+            listaDeTarefas.push(itemTarefa);
+            return ctx.reply(`Anotado na sua lista de tarefas! 📝 "${itemTarefa}" foi guardado com sucesso. 💜`);
+        } else {
+            if (listaDeTarefas.length === 0) {
+                return ctx.reply('Sua lista de tarefas está vazia! 📋✨');
+            }
+            let msgLista = '📋 *Sua Lista de Tarefas:*\n\n';
+            listaDeTarefas.forEach((item, index) => {
+                msgLista += `${index + 1}. ${item}\n`;
+            });
+            msgLista += '\n*Dica:* Para remover uma tarefa concluída, digite "remover tarefa [número]" 🧹';
+            return ctx.replyWithMarkdown(msgLista);
+        }
+    }
+
+    // Remover tarefa concluída
+    if (t.includes('remover tarefa')) {
+        const num = parseInt(t.match(/\d+/));
+        if (!isNaN(num) && listaDeTarefas[num - 1]) {
+            const removido = listaDeTarefas.splice(num - 1, 1);
+            return ctx.reply(`✅ Tarefa "${removido}" concluída e removida da lista! Muito bem! 🎉💜`);
+        }
+        return ctx.reply('Não achei esse número na sua lista de tarefas, Amanda. 🧐');
+    }
 
     // 1. Mostrar Agenda
     if (t.includes('agenda') || t.includes('eventos') || t.includes('mostra')) {
@@ -55,7 +132,7 @@ bot.on('text', async (ctx) => {
                 const dataInicio = e.start.dateTime ? new Date(e.start.dateTime).toLocaleString('pt-BR') : e.start.date;
                 msg += `${i + 1}. *${e.summary}* (${dataInicio}) ⏳\n`;
             });
-            msg += '\n*Dica:* Para apagar, digite apenas o número, por exemplo: "apagar 2" 🧹';
+            msg += '\n*Dica:* Para apagar da agenda, digite "apagar [número]" 🧹';
             return ctx.replyWithMarkdown(msg);
         } catch (err) {
             console.error(err);
@@ -63,7 +140,7 @@ bot.on('text', async (ctx) => {
         }
     }
 
-    // 2. Apagar evento por número (Super seguro e preciso)
+    // Apagar evento da agenda
     if (t.includes('apagar')) {
         try {
             const num = parseInt(t.match(/\d+/));
@@ -82,13 +159,8 @@ bot.on('text', async (ctx) => {
                 return ctx.reply('Não achei nenhum evento com esse número na sua lista atual. 🧐');
             }
 
-            // Se for um evento recorrente (como os Parabéns), deletamos a instância ou o evento pai
             const eventIdToDelete = evento.recurringEventId || evento.id;
-
-            await calendar.events.delete({ 
-                calendarId: 'primary', 
-                eventId: eventIdToDelete 
-            });
+            await calendar.events.delete({ calendarId: 'primary', eventId: eventIdToDelete });
 
             return ctx.reply(`🧹 Prontinho! Apaguei "${evento.summary}" da sua agenda. Tchauzinho! 👋💜`);
         } catch (err) {
@@ -97,7 +169,7 @@ bot.on('text', async (ctx) => {
         }
     }
 
-    // 3. Marcar Compromisso
+    // Marcar Compromisso na Agenda
     if (t.includes('marca')) {
         const regexHora = /(\d{2})[h:](\d{2})?/;
         const matchHora = texto.match(regexHora);
@@ -164,10 +236,7 @@ bot.on('text', async (ctx) => {
                 eventBody.recurrence = ['RRULE:FREQ=WEEKLY'];
             }
 
-            await calendar.events.insert({
-                calendarId: 'primary',
-                requestBody: eventBody
-            });
+            await calendar.events.insert({ calendarId: 'primary', requestBody: eventBody });
 
             const tipoMsg = éFixo ? 'fixado toda semana 🔄' : 'marcado 📌';
             return ctx.reply(`Anotado, Amanda! ✍️ "${summary}" foi ${tipoMsg} para ${horaStr} com notificações ativadas! 🧿💜`);
@@ -179,4 +248,4 @@ bot.on('text', async (ctx) => {
 });
 
 bot.launch();
-console.log('Nebulosa está rodando com sucesso!');
+console.log('Nebulosa está rodando com sucesso e completa!');
