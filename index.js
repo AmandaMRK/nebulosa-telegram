@@ -4,124 +4,161 @@ const cron = require('node-cron');
 const axios = require('axios');
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
-
-// Pega o ID do Telegram configurado nas variáveis do Railway
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 function getCalendarClient() {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
     const token = JSON.parse(process.env.GOOGLE_TOKEN);
     const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
-    
     const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
     oAuth2Client.setCredentials(token);
-    
     return google.calendar({ version: 'v3', auth: oAuth2Client });
 }
 
 // -----------------------------------------------------------------
-// ROTINA AUTOMÁTICA DA NASA (Roda todo dia às 08:00 da manhã)
+// NOTIFICAÇÃO DA NASA (Todo dia às 08:00) 🚀
 // -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
     try {
-        const resposta = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
-        const dados = resposta.data;
-
-        let mensagem = `🚀 *Bom dia, Amanda! Notícia do Espaço hoje:*\n\n`;
-        mensagem += `*${dados.title}*\n\n`;
-        mensagem += `${dados.explanation}\n\n`;
-        if (dados.url) {
-            mensagem += `[Ver Imagem do Dia](${dados.url})`;
-        }
-
-        bot.telegram.sendMessage(MEU_CHAT_ID, mensagem, { parse_mode: 'Markdown' });
-    } catch (error) {
-        console.error('Erro ao buscar dados da NASA:', error);
-    }
+        const res = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
+        const d = res.data;
+        let msg = `✨ *Bom dia, Amanda!* ✨\n\nOlha o que a NASA trouxe para você hoje: *${d.title}* 🌌\n\n${d.explanation.substring(0, 300)}...\n\n[Veja a foto aqui](${d.url}) 🔭💜`;
+        bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
+    } catch (e) { console.error(e); }
 });
 
 // -----------------------------------------------------------------
-// INTELIGÊNCIA DE TEXTO (Agenda e Marcação)
+// INTELIGÊNCIA DA NEBULOSA 💜
 // -----------------------------------------------------------------
 bot.on('text', async (ctx) => {
     const texto = ctx.message.text;
-    const textoMinusculo = texto.toLowerCase();
+    const t = texto.toLowerCase();
+    const calendar = getCalendarClient();
 
-    // 1. Mostrar Eventos / Agenda
-    if (textoMinusculo.includes('mostra') || textoMinusculo.includes('meus eventos') || textoMinusculo.includes('agenda')) {
+    // 1. Mostrar Agenda
+    if (t.includes('agenda') || t.includes('eventos') || t.includes('mostra')) {
         try {
-            const calendar = getCalendarClient();
-            const response = await calendar.events.list({
-                calendarId: 'primary',
-                timeMin: (new Date()).toISOString(),
-                maxResults: 10,
-                singleEvents: true,
-                orderBy: 'startTime',
-            });
+            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
+            if (!res.data.items || res.data.items.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉 Nada por aqui hoje. ☁️');
             
-            const events = response.data.items;
-            if (!events || events.length === 0) {
-                return ctx.reply('Nenhum compromisso encontrado nos próximos dias! 🎉');
-            }
-
-            let mensagem = '📅 *Seus próximos compromissos:*\n\n';
-            events.forEach((event) => {
-                const start = event.start.dateTime ? new Date(event.start.dateTime).toLocaleDateString('pt-BR') : event.start.date;
-                mensagem += `- *${event.summary}* (${start})\n`;
+            let msg = '📅 *Sua lista de compromissos:*\n\n';
+            res.data.items.forEach((e, i) => {
+                const dataInicio = e.start.dateTime ? new Date(e.start.dateTime).toLocaleString('pt-BR') : e.start.date;
+                msg += `${i + 1}. *${e.summary}* (${dataInicio}) ⏳\n`;
             });
-            
-            return ctx.replyWithMarkdown(mensagem);
-        } catch (error) {
-            console.error(error);
-            return ctx.reply('Ops, deu um erro ao buscar a agenda.');
+            msg += '\n*Dica:* Se quiser apagar algum, digite "apagar [número]"! 🧹';
+            return ctx.replyWithMarkdown(msg);
+        } catch (err) {
+            return ctx.reply('Ops, deu ruim ao buscar sua agenda! 😿');
         }
     }
 
-    // 2. Marcar Compromisso (Linguagem Natural com formato brasileiro DD/MM/AAAA)
-    if (textoMinusculo.includes('marca')) {
+    // 2. Apagar evento por número
+    if (t.includes('apagar')) {
+        try {
+            const num = parseInt(t.match(/\d+/));
+            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
+            const evento = res.data.items[num - 1];
+            if (evento) {
+                await calendar.events.delete({ calendarId: 'primary', eventId: evento.id });
+                return ctx.reply(`🧹 Prontinho! Apaguei o evento "${evento.summary}" da sua agenda. Tchauzinho! 👋💜`);
+            }
+            return ctx.reply('Não achei esse número na lista, Amanda. Tente dizer "apagar 1" por exemplo! 🧐');
+        } catch (err) {
+            return ctx.reply('Erro ao tentar apagar o evento. 😢');
+        }
+    }
+
+    // 3. Marcar Compromisso (Com suporte a horário e repetição fixa)
+    if (t.includes('marca')) {
+        // Tenta achar hora (ex: 17h ou 17:00)
+        const regexHora = /(\d{2})[h:](\d{2})?/;
+        const matchHora = texto.match(regexHora);
+        
+        let horaStr = '09:00'; // padrão se não achar
+        if (matchHora) {
+            const h = matchHora[1];
+            const m = matchHora[2] || '00';
+            horaStr = `${h}:${m}`;
+        }
+
+        // Verifica se é fixo / toda semana
+        const éFixo = t.includes('fixo') || t.includes('toda') || t.includes('toda semana');
+        
+        // Exemplo simplificado para pegar o próximo dia da semana ou data DD/MM
         const regexData = /(\d{2})\/(\d{2})(?:\/(\d{4}))?/;
         const matchData = texto.match(regexData);
 
-        if (!matchData) {
-            return ctx.reply('Não consegui identificar a data. Tente algo como: "Nebulosa, marca reunião dia 15/08/2026"');
+        let dataFormatada = '';
+        if (matchData) {
+            const dia = matchData[1];
+            const mes = matchData[2];
+            const ano = matchData[3] || '2026';
+            dataFormatada = `${ano}-${mes}-${dia}`;
+        } else {
+            // Se não passou data exata mas passou dia da semana (ex: quinta), pega a próxima data correspondente
+            // Para simplificar e garantir que funcione agora, vamos usar a data de hoje/amanhã se não houver data explícita,
+            // ou você pode mandar no formato: "Nebulosa, marca moujario dia 13/08/2026 17h fixo"
+            const hoje = new Date();
+            dataFormatada = hoje.toISOString().split('T')[0];
         }
 
-        const dia = matchData[1];
-        const mes = matchData[2];
-        const ano = matchData[3] || '2026';
-        const dataFormatada = `${ano}-${mes}-${dia}`;
+        const startDateTime = `${dataFormatada}T${horaStr}:00-03:00`;
+        // Fim 1 hora depois
+        const [hNum, mNum] = horaStr.split(':');
+        const endH = String(Number(hNum) + 1).padStart(2, '0');
+        const endDateTime = `${dataFormatada}T${endH}:${mNum}:00-03:00`;
 
         let summary = texto
             .replace(/nebulosa,?/gi, '')
             .replace(/marca/gi, '')
+            .replace(/fixo/gi, '')
+            .replace(/toda semana/gi, '')
+            .replace(/toda/gi, '')
             .replace(regexData, '')
+            .replace(regexHora, '')
             .replace(/dia/gi, '')
-            .replace(/no/gi, '')
-            .replace(/para/gi, '')
+            .replace(/s às/gi, '')
+            .replace(/as/gi, '')
+            .replace(/às/gi, '')
             .trim();
 
-        if (!summary) {
-            summary = 'Compromisso sem título';
-        }
+        if (!summary) summary = 'Compromisso';
 
         try {
-            const calendar = getCalendarClient();
+            const eventBody = {
+                summary: summary,
+                start: { dateTime: startDateTime, timeZone: 'America/Sao_Paulo' },
+                end: { dateTime: endDateTime, timeZone: 'America/Sao_Paulo' },
+                // Configura notificações automáticas do Google: 1 dia antes (1440 min) e 2 horas antes (120 min)
+                reminders: {
+                    useDefault: false,
+                    overrides: [
+                        { method: 'popup', minutes: 1440 }, // 1 dia antes
+                        { method: 'popup', minutes: 120 }   // 2 horas antes
+                    ]
+                }
+            };
+
+            // Se for fixo, adiciona regra de repetição semanal
+            if (éFixo) {
+                eventBody.recurrence = ['RRULE:FREQ=WEEKLY'];
+            }
+
             await calendar.events.insert({
                 calendarId: 'primary',
-                requestBody: {
-                    summary: summary,
-                    start: { date: dataFormatada },
-                    end: { date: dataFormatada }
-                }
+                requestBody: eventBody
             });
-            return ctx.reply(`Prontinho! Marquei "${summary}" para o dia ${dia}/${mes}/${ano}. 🚀💜`);
+
+            const tipoMsg = éFixo ? 'fixado toda semana 🔄' : 'marcado 📌';
+            return ctx.reply(`Anotado, Amanda! ✍️ "${summary}" foi ${tipoMsg} para ${horaStr} com notificações ativadas para 1 dia e 2 horas antes! Já estou de olho em tudo! 🧿💜`);
         } catch (error) {
             console.error(error);
-            return ctx.reply('Ops, deu erro ao tentar salvar no Google Calendar.');
+            return ctx.reply('Ops, deu um errinho ao tentar salvar no Google Calendar. Tenta de novo? 😿');
         }
     }
 });
 
 bot.launch();
-console.log('Nebulosa está rodando com sucesso!');
+console.log('Nebulosa está rodando com sucesso e cheia de estilo!');
