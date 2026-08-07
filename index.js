@@ -5,8 +5,8 @@ const axios = require('axios');
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 
-// IMPORTANTE: Coloque aqui o seu ID numérico do Telegram para a NASA mandar mensagem para você
-const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'SEU_CHAT_ID_AQUI';
+// Pega o ID do Telegram configurado nas variáveis do Railway
+const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
 function getCalendarClient() {
     const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -23,7 +23,7 @@ function getCalendarClient() {
 // ROTINA AUTOMÁTICA DA NASA (Roda todo dia às 08:00 da manhã)
 // -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
-    if (!MEU_CHAT_ID || MEU_CHAT_ID === 'SEU_CHAT_ID_AQUI') return;
+    if (!MEU_CHAT_ID) return;
     try {
         const resposta = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
         const dados = resposta.data;
