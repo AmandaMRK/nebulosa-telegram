@@ -39,48 +39,65 @@ bot.on('text', async (ctx) => {
     // 1. Mostrar Agenda
     if (t.includes('agenda') || t.includes('eventos') || t.includes('mostra')) {
         try {
-            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
-            if (!res.data.items || res.data.items.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉 Nada por aqui hoje. ☁️');
+            const res = await calendar.events.list({ 
+                calendarId: 'primary', 
+                timeMin: (new Date()).toISOString(), 
+                maxResults: 15, 
+                singleEvents: true, 
+                orderBy: 'startTime' 
+            });
+            
+            const events = res.data.items;
+            if (!events || events.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉 Nada por aqui hoje. ☁️');
             
             let msg = '📅 *Sua lista de compromissos:*\n\n';
-            res.data.items.forEach((e, i) => {
+            events.forEach((e, i) => {
                 const dataInicio = e.start.dateTime ? new Date(e.start.dateTime).toLocaleString('pt-BR') : e.start.date;
                 msg += `${i + 1}. *${e.summary}* (${dataInicio}) ⏳\n`;
             });
-            msg += '\n*Dica:* Se quiser apagar algum, digite "apagar [número]"! 🧹';
+            msg += '\n*Dica:* Para apagar, digite apenas o número, por exemplo: "apagar 2" 🧹';
             return ctx.replyWithMarkdown(msg);
         } catch (err) {
+            console.error(err);
             return ctx.reply('Ops, deu ruim ao buscar sua agenda! 😿');
         }
     }
 
-    // 2. Apagar evento por número (Corrigido e mais robusto)
+    // 2. Apagar evento por número (Super seguro e preciso)
     if (t.includes('apagar')) {
         try {
             const num = parseInt(t.match(/\d+/));
-            if (isNaN(num)) return ctx.reply('Amanda, preciso de um número. Exemplo: "apagar 1" 🧐');
+            if (isNaN(num)) return ctx.reply('Amanda, preciso do número do evento. Exemplo: "apagar 2" 🧐');
             
             const res = await calendar.events.list({ 
                 calendarId: 'primary', 
                 timeMin: (new Date()).toISOString(), 
-                maxResults: 10, 
+                maxResults: 15, 
                 singleEvents: true, 
                 orderBy: 'startTime' 
             });
             
             const evento = res.data.items[num - 1];
-            if (evento) {
-                await calendar.events.delete({ calendarId: 'primary', eventId: evento.id });
-                return ctx.reply(`🧹 Prontinho! Apaguei o evento "${evento.summary}" da sua agenda. Tchauzinho! 👋💜`);
+            if (!evento) {
+                return ctx.reply('Não achei nenhum evento com esse número na sua lista atual. 🧐');
             }
-            return ctx.reply('Não achei esse número na lista, Amanda. Tente dizer "apagar 1" por exemplo! 🧐');
+
+            // Se for um evento recorrente (como os Parabéns), deletamos a instância ou o evento pai
+            const eventIdToDelete = evento.recurringEventId || evento.id;
+
+            await calendar.events.delete({ 
+                calendarId: 'primary', 
+                eventId: eventIdToDelete 
+            });
+
+            return ctx.reply(`🧹 Prontinho! Apaguei "${evento.summary}" da sua agenda. Tchauzinho! 👋💜`);
         } catch (err) {
-            console.error(err);
+            console.error('Erro detalhado ao apagar:', err);
             return ctx.reply('Erro ao tentar apagar o evento. 😢');
         }
     }
 
-    // 3. Marcar Compromisso (Com suporte a horário, repetição fixa e lembretes)
+    // 3. Marcar Compromisso
     if (t.includes('marca')) {
         const regexHora = /(\d{2})[h:](\d{2})?/;
         const matchHora = texto.match(regexHora);
@@ -137,8 +154,8 @@ bot.on('text', async (ctx) => {
                 reminders: {
                     useDefault: false,
                     overrides: [
-                        { method: 'popup', minutes: 1440 }, // 1 dia antes
-                        { method: 'popup', minutes: 120 }   // 2 horas antes
+                        { method: 'popup', minutes: 1440 },
+                        { method: 'popup', minutes: 120 }
                     ]
                 }
             };
@@ -153,7 +170,7 @@ bot.on('text', async (ctx) => {
             });
 
             const tipoMsg = éFixo ? 'fixado toda semana 🔄' : 'marcado 📌';
-            return ctx.reply(`Anotado, Amanda! ✍️ "${summary}" foi ${tipoMsg} para ${horaStr} com notificações ativadas para 1 dia e 2 horas antes! Já estou de olho em tudo! 🧿💜`);
+            return ctx.reply(`Anotado, Amanda! ✍️ "${summary}" foi ${tipoMsg} para ${horaStr} com notificações ativadas! 🧿💜`);
         } catch (error) {
             console.error(error);
             return ctx.reply('Ops, deu um errinho ao tentar salvar no Google Calendar. Tenta de novo? 😿');
@@ -162,4 +179,4 @@ bot.on('text', async (ctx) => {
 });
 
 bot.launch();
-console.log('Nebulosa está rodando com sucesso e cheia de estilo!');
+console.log('Nebulosa está rodando com sucesso!');
