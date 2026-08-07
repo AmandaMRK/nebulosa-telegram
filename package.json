@@ -7,7 +7,9 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "googleapis": "^174.0.1",
     "grammy": "^1.21.1",
-    "node-cron": "^3.0.3"
+    "node-cron": "^3.0.3",
+    "telegraf": "^4.16.3"
   }
 }
