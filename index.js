@@ -1,89 +1,72 @@
-const { Bot } = require('grammy');
-const cron = require('node-cron');
+const { Telegraf } = require('telegraf');
+const express = require('express');
+const { google } = require('googleapis');
 
-const bot = new Bot(process.env.TELEGRAM_TOKEN);
-const seuChatId = 7855365372;
+// 1. Configuração do Servidor HTTP (O que mantém o bot acordado no Render)
+const app = express();
+// O Render injeta a variável PORT automaticamente, mas garantimos o 10000 como fallback
+const PORT = process.env.PORT || 10000;
 
-// Comando inicial /start
-bot.command('start', async (ctx) => {
-    await ctx.reply('🌌 Olá, Amanda! Sou a Nebulosa, sua assistente cósmica no Telegram.\n\n📡 *Meus radares estão ligados!* Você pode me pedir notícias da NASA, mandar fotos ou marcar compromissos dizendo algo como: *"Nebulosa, agenda para dia 11/08/2026 às 17h ir ao Poupatempo"*. Digite /nasa para puxar o último plantão espacial! 🚀✨');
+app.get('/', (req, res) => {
+  res.send('Nebulosa está online!');
 });
 
-// Comando para buscar o Plantão da NASA sob demanda
-bot.command('nasa', async (ctx) => {
-    await ctx.reply('🛰️ *Varrendo os radares da NASA...*\nBuscando as últimas atualizações do cosmos para você, Amanda! ⏳');
+// AQUI ESTÁ O PULO DO GATO: o '0.0.0.0' garante que o Render encontre a porta aberta
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor HTTP ouvindo na porta ${PORT}`);
+});
+
+// 2. Inicialização do Bot do Telegram
+const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
+
+// 3. Configuração da Autenticação do Google Calendar
+function getCalendarClient() {
+  const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+  const token = JSON.parse(process.env.GOOGLE_TOKEN);
+
+  const { client_secret, client_id, redirect_uris } = credentials.installed || credentials.web;
+  const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
+  
+  oAuth2Client.setCredentials(token);
+  return google.calendar({ version: 'v3', auth: oAuth2Client });
+}
+
+// 4. Comando /agenda
+bot.command('agenda', async (ctx) => {
+  try {
+    const calendar = getCalendarClient();
     
-    try {
-        const resposta = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
-        const dados = await resposta.json();
+    const response = await calendar.events.list({
+      calendarId: 'primary',
+      timeMin: (new Date()).toISOString(),
+      maxResults: 5,
+      singleEvents: true,
+      orderBy: 'startTime',
+    });
 
-        const mensagemNoticia = `🌌🚨 **PLANTÃO NASA - ÚLTIMAS DO COSMOS** 🚨🌌\n\n` +
-                                `📌 **Título:** ${dados.title}\n` +
-                                `📅 **Data:** ${dados.date}\n\n` +
-                                `📖 *Resumo:* ${dados.explanation}\n\n` +
-                                `🔗 [Ver imagem oficial em alta resolução](${dados.url})`;
+    const events = response.data.items;
 
-        await ctx.reply(mensagemNoticia, { parse_mode: 'Markdown' });
-    } catch (erro) {
-        await ctx.reply('⚠️ Os ventos solares interferiram no sinal da NASA agora pouco, mas tente novamente em instantes, Amanda!');
+    if (!events || events.length === 0) {
+      return ctx.reply('Nenhum compromisso encontrado nos próximos dias! 🎉');
     }
+
+    let mensagem = '📅 *Seus próximos compromissos:*\n\n';
+    events.forEach((event) => {
+      const start = event.start.dateTime || event.start.date;
+      mensagem += `- *${event.summary}* (${start})\n`;
+    });
+
+    ctx.replyWithMarkdown(mensagem);
+  } catch (error) {
+    console.error('Erro ao buscar agenda:', error);
+    ctx.reply('Ops! Ocorreu um erro ao acessar o Google Calendar.');
+  }
 });
 
-// Curiosidades
-bot.hears(/curiosidade|espaço/i, async (ctx) => {
-    await ctx.reply('🌌 [Fato Cósmico]: Existem mais estrelas no universo observável do que grãos de areia em todas as praias da Terra juntas! 🌟🏖️');
+// 5. Inicialização do Bot
+bot.launch().then(() => {
+  console.log('Nebulosa com Radar da NASA iniciada com sucesso!');
 });
 
-// Quando você mandar foto
-bot.on(':photo', async (ctx) => {
-    const dataHoraAtual = new Date().toLocaleString('pt-BR');
-    await ctx.reply(`🌌📸 **Foto recebida e registrada!**\n⏱️ Marcada em: ${dataHoraAtual}\n💜 Guardada com carinho no banco de dados estelar!`);
-});
-
-// Inteligência para Agenda e Tarefas com Confirmação Personalizada
-bot.on('message:text', async (ctx) => {
-    const texto = ctx.message.text;
-    const textoLower = texto.toLowerCase();
-    
-    if (!texto.startsWith('/')) {
-        // Verifica se é um pedido de agendamento/compromisso
-        if (textoLower.includes('agenda') || textoLower.includes('lembrete') || textoLower.includes('marcar') || textoLower.includes('compromisso') || textoLower.includes('avisar')) {
-            
-            // Tenta extrair uma data no formato DD/MM/AAAA ou DD/MM
-            const regexData = /(\d{2}\/\d{2}(\/\d{4})?)/;
-            const matchData = texto.match(regexData);
-            const dataExtraida = matchData ? matchData[0] : 'data informada';
-
-            // Tenta extrair um horário (ex: 17h, 15:30, etc)
-            const regexHora = /(\d{1,2}h(\d{2})?|\d{1,2}:\d{2})/;
-            const matchHora = texto.match(regexHora);
-            const horaExtraida = matchHora ? matchHora[0] : 'horário combinado';
-
-            await ctx.reply(`Ok, Amanda, marquei aqui para o dia ${dataExtraida} às ${horaExtraida} e te aviso! 🚀🗓️`);
-        } else {
-            const dataHoraAtual = new Date().toLocaleString('pt-BR');
-            await ctx.reply(`📌 **Nota salva pela Nebulosa!**\n⏱️ ${dataHoraAtual}\n💬 *"${texto}"*`);
-        }
-    }
-});
-
-// Notificação automática de Bom dia + Notícia da NASA (Todo dia às 08:00)
-cron.schedule('0 8 * * *', async () => {
-    try {
-        const resposta = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
-        const dados = await resposta.json();
-
-        const relatorioMatinal = `🌅 **Bom dia, Amanda! Relatório da Nebulosa:**\n\n` +
-                                 `📡 *Plantão Espacial de Hoje:*\n` +
-                                 `📌 **${dados.title}**\n` +
-                                 `📖 ${dados.explanation.substring(0, 300)}...\n\n` +
-                                 `🚀 Rotina estelar em dia e pronta para mais um ciclo!`;
-
-        await bot.api.sendMessage(seuChatId, relatorioMatinal, { parse_mode: 'Markdown' });
-    } catch (e) {
-        await bot.api.sendMessage(seuChatId, '🌅 **Bom dia, Amanda!** Rotina estelar em dia e pronta para mais um ciclo! 🚀✨');
-    }
-});
-
-bot.start();
-console.log('🌌🚀 Nebulosa com Radar da NASA iniciada com sucesso!');
+process.once('SIGINT', () => bot.stop('SIGINT'));
+process.once('SIGTERM', () => bot.stop('SIGTERM'));
