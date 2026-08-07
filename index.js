@@ -28,7 +28,7 @@ cron.schedule('0 8 * * *', async () => {
 
         const calendar = getCalendarClient();
         const hojeInicio = new Date().toISOString();
-        const resAgenda = await calendar.events.list({ calendarId: 'primary', timeMin: hojeInicio, singleEvents: true, orderBy: 'startTime', maxResults: 5 });
+        const resAgenda = await calendar.events.list({ calendarId: 'primary', timeMin: hojeInicio, singleEvents: true, orderBy: 'startTime', maxResults: 10 });
         
         const eventosHoje = resAgenda.data.items.filter(e => e.summary !== 'Parabéns!');
         if (eventosHoje.length > 0) {
@@ -52,38 +52,62 @@ bot.on('text', async (ctx) => {
     // Mostrar Agenda (Filtro para ignorar os "Parabéns!")
     if (t.includes('agenda') || t.includes('mostra')) {
         try {
-            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
-            // Filtro que remove todos os eventos com título "Parabéns!"
+            const res = await calendar.events.list({ calendarId: 'primary', timeMin: (new Date()).toISOString(), maxResults: 15, singleEvents: true, orderBy: 'startTime' });
             const eventosFiltrados = res.data.items.filter(e => e.summary !== 'Parabéns!');
             
             if (eventosFiltrados.length === 0) return ctx.reply('Sua agenda está limpinha! 🎉');
             
             let msg = '📅 *Sua lista de compromissos:*\n\n';
             eventosFiltrados.forEach((e, i) => {
-                const data = e.start.dateTime ? new Date(e.start.dateTime).toLocaleDateString('pt-BR') : e.start.date;
+                const data = e.start.date || new Date(e.start.dateTime).toLocaleDateString('pt-BR');
                 msg += `${i + 1}. *${e.summary}* (${data}) ⏳\n`;
             });
             return ctx.replyWithMarkdown(msg);
-        } catch (err) { ctx.reply('Erro ao buscar agenda. 😿'); }
+        } catch (err) { 
+            console.error(err);
+            ctx.reply('Erro ao buscar agenda. 😿'); 
+        }
     }
 
-    // Marcar (Corrigido)
+    // Marcar compromisso com data DD/MM/AAAA corrigida
     if (t.includes('marca')) {
         try {
-            const resumo = texto.replace(/nebulosa,?/gi, '').replace(/marca/gi, '').trim();
-            const dataHoje = new Date().toISOString().split('T')[0];
+            const regexData = /(\d{2})\/(\d{2})\/(\d{4})/;
+            const matchData = texto.match(regexData);
+
+            let dataFormatada = '';
+            if (matchData) {
+                const dia = matchData[1];
+                const mes = matchData[2];
+                const ano = matchData[3];
+                dataFormatada = `${ano}-${mes}-${dia}`;
+            } else {
+                const hoje = new Date();
+                dataFormatada = hoje.toISOString().split('T')[0];
+            }
+
+            let resumo = texto
+                .replace(/nebulosa,?/gi, '')
+                .replace(/marca/gi, '')
+                .replace(/para mim/gi, '')
+                .replace(regexData, '')
+                .trim();
+
+            if (!resumo) resumo = 'Compromisso';
+
             await calendar.events.insert({
                 calendarId: 'primary',
                 requestBody: {
                     summary: resumo,
-                    start: { date: dataHoje },
-                    end: { date: dataHoje }
+                    start: { date: dataFormatada },
+                    end: { date: dataFormatada }
                 }
             });
-            ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" salvo no calendário. 🧿💜`);
+
+            return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi marcado para o dia ${matchData ? matchData[0] : 'hoje'}. 🧿💜`);
         } catch (err) { 
-            console.error(err);
-            ctx.reply('Erro ao salvar. Tente um formato simples: "Nebulosa, marca tal coisa" 😿'); 
+            console.error('Erro detalhado ao marcar:', err);
+            ctx.reply('Ops, deu um errinho ao tentar salvar no Google Calendar. Tenta de novo? 😿'); 
         }
     }
 });
