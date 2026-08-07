@@ -5,12 +5,31 @@ const axios = require('axios');
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 
-// Bancos de dados internos da Nebulosa (salvos na memória)
+// Bancos de dados internos da Nebulosa
 let minhaAgenda = [];
 let listaDeTarefas = [];
 
+// Função auxiliar para formatar a data de hoje (DD/MM/YYYY)
+function getDataHoje() {
+    const hoje = new Date();
+    const dia = String(hoje.getDate()).padStart(2, '0');
+    const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+    const ano = hoje.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+}
+
+// Função auxiliar para formatar a data de amanhã (DD/MM/YYYY)
+function getDataAmanha() {
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+    const dia = String(amanha.getDate()).padStart(2, '0');
+    const mes = String(amanha.getMonth() + 1).padStart(2, '0');
+    const ano = amanha.getFullYear();
+    return `${dia}/${mes}/${ano}`;
+}
+
 // -----------------------------------------------------------------
-// 1. ROTINA DE 08:00 (NASA + RESUMO DO DIA) 🚀📅
+// 1. ROTINA DE 08:00 (NASA + RESUMO DO DIA + ALERTA DE AMANHÃ) 🚀📅
 // -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
@@ -19,13 +38,29 @@ cron.schedule('0 8 * * *', async () => {
         const d = resNasa.data;
         let msg = `✨ *Bom dia, Amanda!* ✨\n\nNotícia espacial: *${d.title}* 🌌\n\n[Veja a foto aqui](${d.url})\n\n`;
 
-        if (minhaAgenda.length > 0) {
-            msg += `📅 *Seus compromissos salvos:*\n`;
-            minhaAgenda.forEach((item, index) => {
-                msg += `${index + 1}. *${item.compromisso}* (${item.data})\n`;
+        const hojeStr = getDataHoje();
+        const amanhaStr = getDataAmanha();
+
+        // Filtra eventos de hoje
+        const compromissosHoje = minhaAgenda.filter(item => item.data === hojeStr);
+        // Filtra eventos de amanhã (antecipação)
+        const compromissosAmanha = minhaAgenda.filter(item => item.data === amanhaStr);
+
+        if (compromissosHoje.length > 0) {
+            msg += `📅 *Compromissos para hoje (${hojeStr}):*\n`;
+            compromissosHoje.forEach((item) => {
+                msg += `- *${item.compromisso}* ⏳\n`;
             });
+            msg += `\n`;
         } else {
-            msg += `📅 *Nenhum compromisso na agenda hoje!* 🎉`;
+            msg += `📅 *Nenhum compromisso agendado para hoje!* 🎉\n\n`;
+        }
+
+        if (compromissosAmanha.length > 0) {
+            msg += `⚠️ *Aviso importante (Para amanhã - ${amanhaStr}):*\n`;
+            compromissosAmanha.forEach((item) => {
+                msg += `- *${item.compromisso}* 🔔\n`;
+            });
         }
 
         bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
@@ -45,9 +80,9 @@ bot.on('text', async (ctx) => {
             return ctx.reply('Sua agenda interna está limpinha! 🎉 Nada por aqui. ☁️');
         }
         
-        let msg = '📅 *Sua Agenda Interna:*\n\n';
+        let msg = '📅 *Sua Agenda Interna Completa:*\n\n';
         minhaAgenda.forEach((item, index) => {
-            msg += `${index + 1}. *${item.compromisso}* — ${item.data} ⏳\n`;
+            msg += `${index + 1}. *${item.compromisso}* — 🗓️ ${item.data} ⏳\n`;
         });
         msg += '\n*Dica:* Para apagar, digite "apagar agenda [número]" 🧹';
         return ctx.replyWithMarkdown(msg);
@@ -68,7 +103,7 @@ bot.on('text', async (ctx) => {
         const regexData = /(\d{2})\/(\d{2})\/(\d{4})/;
         const matchData = texto.match(regexData);
         
-        let dataCompromisso = matchData ? matchData[0] : 'Hoje';
+        let dataCompromisso = matchData ? matchData[0] : getDataHoje();
 
         let resumo = texto
             .replace(/nebulosa,?/gi, '')
@@ -80,7 +115,7 @@ bot.on('text', async (ctx) => {
         if (!resumo) resumo = 'Compromisso';
 
         minhaAgenda.push({ compromisso: resumo, data: dataCompromisso });
-        return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi salvo na sua agenda para o dia ${dataCompromisso}! 🧿💜`);
+        return ctx.reply(`Anotado, Amanda! ✍️ "${resumo}" foi fixado na sua agenda para o dia ${dataCompromisso}! Todo dia de manhã (e na véspera) eu vou te lembrar dele! 🧿💜`);
     }
 
     // D. Sistema de Tarefas (To-Do)
@@ -112,4 +147,4 @@ bot.on('text', async (ctx) => {
 });
 
 bot.launch();
-console.log('Nebulosa interna rodando perfeitamente!');
+console.log('Nebulosa inteligente e com lembretes ativada!');
