@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const cron = require('node-cron');
 const axios = require('axios');
