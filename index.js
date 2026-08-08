@@ -9,9 +9,7 @@ const ARQUIVO_DADOS = './agenda.json';
 
 let dados = { agenda: [] };
 if (fs.existsSync(ARQUIVO_DADOS)) {
-    try {
-        dados = JSON.parse(fs.readFileSync(ARQUIVO_DADOS, 'utf8'));
-    } catch (e) { console.error('Erro ao ler JSON:', e); }
+    try { dados = JSON.parse(fs.readFileSync(ARQUIVO_DADOS, 'utf8')); } catch (e) {}
 }
 
 function salvarDados() {
@@ -22,7 +20,6 @@ function getDataHoje() {
     return new Date().toLocaleDateString('pt-BR');
 }
 
-// Função para gerar o menu principal
 function painelMenu() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📅 Meus compromissos de hoje', 'menu_hoje')],
@@ -34,161 +31,100 @@ function painelMenu() {
     ]);
 }
 
-// -----------------------------------------------------------------
-// ROTINA DAS 08:00 (NASA + RESUMO) 🌌✨
-// -----------------------------------------------------------------
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
     try {
         const resNasa = await axios.get('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY');
         const d = resNasa.data;
-        let msg = `🌌 *Bom dia, Amanda!* 🪐\n\n🔭 *NASA de Hoje:* ${d.title}\n[Ver imagem estelar](${d.url})\n\n`;
-
+        let msg = `🌌 *Bom dia, Amanda!* 🪐\n\n🔭 *NASA de Hoje:* ${d.title}\n[Ver imagem](${d.url})\n\n`;
         const hoje = getDataHoje();
-        const compromissosHoje = dados.agenda.filter(i => i.data === hoje);
-
-        if (compromissosHoje.length > 0) {
-            msg += `📅 *Seus compromissos para hoje (${hoje}):*\n` + compromissosHoje.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.hora})`).join('\n');
-        } else {
-            msg += `📅 *Sua agenda de hoje está livre nas estrelas!* 🎉🪐`;
-        }
+        const itens = dados.agenda.filter(i => i.data === hoje);
+        msg += itens.length > 0 ? `📅 *Hoje:* \n` + itens.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.hora})`).join('\n') : `📅 *Agenda livre hoje!* 🎉🪐`;
         bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
-    } catch (e) { console.error(e); }
+    } catch (e) {}
 });
 
-// -----------------------------------------------------------------
-// COMANDOS DE TEXTO (Início e Ações Rápidas)
-// -----------------------------------------------------------------
 bot.command(['start', 'menu', 'ajuda'], async (ctx) => {
-    return ctx.reply('🌌 *Painel de Controle Estelar - Nebulosa* 🪐\n\nEscolha uma das opções abaixo para navegar pelo seu universo:', painelMenu());
+    return ctx.reply('🌌 *Painel de Controle Estelar - Nebulosa* 🪐\n\nEscolha uma opção abaixo:', painelMenu());
 });
 
 bot.on('text', async (ctx) => {
-    const texto = ctx.message.text;
-    const t = texto.toLowerCase();
-
+    const t = ctx.message.text.toLowerCase();
     if (t === 'menu' || t === 'ajuda') {
-        return ctx.reply('🌌 *Painel de Controle Estelar - Nebulosa* 🪐\n\nEscolha uma das opções abaixo:', painelMenu());
+        return ctx.reply('🌌 *Painel Estelar* 🪐', painelMenu());
     }
-
     if (t.startsWith('marcar:')) {
         const info = t.replace('marcar:', '').trim();
-        const dataHoje = getDataHoje();
-        dados.agenda.push({ titulo: info, data: dataHoje, hora: '10:00' });
+        dados.agenda.push({ titulo: info, data: getDataHoje(), hora: '10:00' });
         salvarDados();
-        return ctx.reply(`✨ Compromisso *" ${info} "* adicionado com sucesso às estrelas para hoje! 🪐🎉\n\nDigite ou envie /menu para voltar ao painel.`);
-    }
-
-    if (t.startsWith('editar:')) {
-        const partes = t.split(':');
-        const index = parseInt(partes[1]);
-        const novoNome = partes[2].trim();
-        if (dados.agenda[index]) {
-            dados.agenda[index].titulo = novoNome;
-            salvarDados();
-            return ctx.reply(`✨ Compromisso atualizado com sucesso para *" ${novoNome} "* no nosso cosmos! 🪐🚀\n\nDigite /menu para voltar ao painel.`);
-        }
+        return ctx.reply(`✨ Compromisso *" ${info} "* salvo com sucesso para hoje! 🪐🎉\n\nEnvie /menu para voltar.`);
     }
 });
 
-// -----------------------------------------------------------------
-// AÇÕES DOS BOTÕES INTERATIVOS 🌟
-// -----------------------------------------------------------------
 bot.action('menu_hoje', async (ctx) => {
     const hoje = getDataHoje();
-    const compromissos = dados.agenda.filter(i => i.data === hoje);
-    if (compromissos.length === 0) return ctx.editMessageText('🌌 Nenhum compromisso estelar marcado para hoje! Sua órbita está livre. 🪐☁️\n\nClique abaixo para voltar:', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]]));
-
-    let msg = `📅 *Compromissos de Hoje (${hoje}):*\n\n`;
-    compromissos.forEach((i, idx) => {
-        msg += `${idx + 1}. ✨ *${i.titulo}* — ⏰ ${i.hora}\n`;
-    });
-    
-    const botoes = [
-        [Markup.button.callback('➕ Marcar outro', 'menu_marcar')],
-        [Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]
-    ];
+    const itens = dados.agenda.filter(i => i.data === hoje);
+    const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
+    if (itens.length === 0) return ctx.editMessageText('🌌 Nenhum compromisso para hoje! Órbita livre. 🪐', Markup.inlineKeyboard(botoes));
+    let msg = `📅 *Hoje (${hoje}):*\n\n` + itens.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.hora})`).join('\n');
     await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_marcar', async (ctx) => {
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText('🪐 *Como marcar um compromisso:*\n\nBasta digitar no chat:\n`marcar: [nome do seu compromisso]`\n\nExemplo: `marcar: Reunião importante` 🚀✨', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText('🪐 *Como marcar:*\n\nDigite no chat:\n`marcar: [nome do compromisso]`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_livres', async (ctx) => {
-    const hoje = getDataHoje();
-    const ocupados = dados.agenda.filter(i => i.data === hoje).map(i => i.hora);
-    const msg = `🕒 *Análise de Horários Livres (${hoje}):*\n\nHorários ocupados: ${ocupados.length > 0 ? ocupados.join(', ') : 'Nenhum'}.\n✨ O resto do seu dia cósmico está totalmente livre! 🌌🪐`;
+    const ocupados = dados.agenda.filter(i => i.data === getDataHoje()).map(i => i.hora);
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText(`🕒 Horários ocupados: ${ocupados.length > 0 ? ocupados.join(', ') : 'Nenhum'}.\n✨ O resto está livre! 🌌`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_todos', async (ctx) => {
-    if (dados.agenda.length === 0) {
-        const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-        return ctx.editMessageText('🌌 Sua agenda universal está completamente vazia! 🪐', Markup.inlineKeyboard(botoes));
-    }
-
-    let msg = '📋 *Todos os Compromissos na Órbita:*\n\n';
-    dados.agenda.forEach((i, idx) => {
-        msg += `${idx + 1}. ✨ *${i.titulo}* (🗓️ ${i.data} às ${i.hora})\n`;
-    });
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
+    if (dados.agenda.length === 0) return ctx.editMessageText('🌌 Agenda vazia!', Markup.inlineKeyboard(botoes));
+    let msg = '📋 *Todos os compromissos:*\n\n' + dados.agenda.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.data})`).join('\n');
     await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_apagar', async (ctx) => {
-    if (dados.agenda.length === 0) {
-        const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-        return ctx.editMessageText('🌌 Não há nada para apagar, sua agenda já está limpinha! 🪐', Markup.inlineKeyboard(botoes));
-    }
-
-    const botoes = dados.agenda.map((item, idx) => {
-        return [Markup.button.callback(`🗑️ Apagar [${idx + 1}] ${item.titulo}`, `del_${idx}`)];
-    });
-    botoes.push([Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]);
-
-    await ctx.editMessageText('🗑️ *Qual compromisso estelar você deseja apagar?* Clique em cima:', Markup.inlineKeyboard(botoes));
+    const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
+    if (dados.agenda.length === 0) return ctx.editMessageText('🌌 Nada para apagar!', Markup.inlineKeyboard(botoes));
+    const listaBotoes = dados.agenda.map((item, idx) => [Markup.button.callback(`🗑️ Apagar [${idx + 1}] ${item.titulo}`, `del_${idx}`)]);
+    listaBotoes.push([Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]);
+    await ctx.editMessageText('🗑️ *Qual deseja apagar?* Clique em cima:', Markup.inlineKeyboard(listaBotoes));
 });
 
 bot.action(/del_(\d+)/, async (ctx) => {
     const index = parseInt(ctx.match[1]);
+    const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
     if (dados.agenda[index]) {
         const removido = dados.agenda.splice(index, 1);
         salvarDados();
-        const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-        await ctx.editMessageText(`🪐✨ Compromisso *" ${removido[0].titulo} "* apagado com sucesso do universo! 🗑️🚀`, Markup.inlineKeyboard(botoes));
+        await ctx.editMessageText(`🪐✨ Compromisso *" ${removido[0].titulo} "* apagado com sucesso! 🗑️`, Markup.inlineKeyboard(botoes));
     } else {
-        const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-        await ctx.editMessageText('⚠️ Item não encontrado na órbita.', Markup.inlineKeyboard(botoes));
+        await ctx.editMessageText('⚠️ Item não encontrado.', Markup.inlineKeyboard(botoes));
     }
 });
 
 bot.action('menu_editar', async (ctx) => {
-    if (dados.agenda.length === 0) {
-        const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-        return ctx.editMessageText('🌌 Sua agenda está vazia, nada para editar. 🪐', Markup.inlineKeyboard(botoes));
-    }
-
-    const botoes = dados.agenda.map((item, idx) => {
-        return [Markup.button.callback(`✏️ Editar [${idx + 1}] ${item.titulo}`, `edit_${idx}`)];
-    });
-    botoes.push([Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]);
-
-    await ctx.editMessageText('✏️ *Qual compromisso você deseja editar?*', Markup.inlineKeyboard(botoes));
+    const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
+    if (dados.agenda.length === 0) return ctx.editMessageText('🌌 Agenda vazia!', Markup.inlineKeyboard(botoes));
+    const listaBotoes = dados.agenda.map((item, idx) => [Markup.button.callback(`✏️ Editar [${idx + 1}] ${item.titulo}`, `edit_${idx}`)]);
+    listaBotoes.push([Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]);
+    await ctx.editMessageText('✏️ *Qual deseja editar?*', Markup.inlineKeyboard(listaBotoes));
 });
 
 bot.action(/edit_(\d+)/, async (ctx) => {
     const index = parseInt(ctx.match[1]);
-    const item = dados.agenda[index];
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText(`✏️ Você selecionou: *${item.titulo}*.\n\nPara alterar o nome, digite no chat:\n\`editar:${index}: [novo nome]\` 🪐✨`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText(`✏️ Para alterar, digite:\n\`editar:${index}: [novo nome]\``, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('voltar_menu', async (ctx) => {
-    await ctx.editMessageText('🌌 *Painel de Controle Estelar - Nebulosa* 🪐\n\nEscolha uma opção:', painelMenu());
+    await ctx.editMessageText('🌌 *Painel Estelar - Nebulosa* 🪐', painelMenu());
 });
 
 bot.launch();
-console.log('Nebulosa Interativa Estelar rodando com sucesso!');
+console.log('Nebulosa Estelar v2 rodando!');
