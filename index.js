@@ -1,8 +1,9 @@
-require('dotenv').config();
 const { Telegraf, Markup } = require('telegraf');
 const cron = require('node-cron');
 const axios = require('axios');
 const fs = require('fs');
+
+require('dotenv').config();
 
 const bot = new Telegraf(process.env.TELEGRAM_TOKEN);
 const MEU_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -32,6 +33,7 @@ function painelMenu() {
     ]);
 }
 
+// NASA e Resumo Diário às 08:00
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
     try {
@@ -42,6 +44,14 @@ cron.schedule('0 8 * * *', async () => {
         const itens = dados.agenda.filter(i => i.data === hoje);
         msg += itens.length > 0 ? `📅 *Hoje:* \n` + itens.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.hora})`).join('\n') : `📅 *Agenda livre hoje!* 🎉🪐`;
         bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
+    } catch (e) {}
+});
+
+// Exemplo de Lembrete Recorrente (toda quinta-feira às 09:00)
+cron.schedule('0 9 * * 4', async () => {
+    if (!MEU_CHAT_ID) return;
+    try {
+        await bot.telegram.sendMessage(MEU_CHAT_ID, '📅 *Lembrete Estelar:* Quinta-feira chegou! Fique de olho nos seus compromissos recorrentes de hoje.', { parse_mode: 'Markdown' });
     } catch (e) {}
 });
 
