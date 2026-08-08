@@ -47,11 +47,14 @@ cron.schedule('0 8 * * *', async () => {
     } catch (e) {}
 });
 
-// Exemplo de Lembrete Recorrente (toda quinta-feira às 09:00)
+// Lembrete automático recorrente toda quinta-feira às 09:00
 cron.schedule('0 9 * * 4', async () => {
     if (!MEU_CHAT_ID) return;
     try {
-        await bot.telegram.sendMessage(MEU_CHAT_ID, '📅 *Lembrete Estelar:* Quinta-feira chegou! Fique de olho nos seus compromissos recorrentes de hoje.', { parse_mode: 'Markdown' });
+        const lembretes = dados.agenda.filter(i => i.recorrente === true);
+        for (const item of lembretes) {
+            await bot.telegram.sendMessage(MEU_CHAT_ID, `📅 *Lembrete Semanal:* ${item.titulo} 🪐`, { parse_mode: 'Markdown' });
+        }
     } catch (e) {}
 });
 
@@ -61,14 +64,42 @@ bot.command(['start', 'menu', 'ajuda'], async (ctx) => {
 
 bot.on('text', async (ctx) => {
     const t = ctx.message.text.toLowerCase();
+    
     if (t === 'menu' || t === 'ajuda') {
         return ctx.reply('🌌 *Painel Estelar* 🪐', painelMenu());
     }
+
     if (t.startsWith('marcar:')) {
         const info = t.replace('marcar:', '').trim();
-        dados.agenda.push({ titulo: info, data: getDataHoje(), hora: '10:00' });
+        const ehRecorrente = info.toLowerCase().includes('toda quinta');
+        
+        dados.agenda.push({ 
+            titulo: info, 
+            data: ehRecorrente ? 'Toda Quinta' : getDataHoje(), 
+            hora: '09:00',
+            recorrente: ehRecorrente 
+        });
         salvarDados();
-        return ctx.reply(`✨ Compromisso *" ${info} "* salvo com sucesso para hoje! 🪐🎉\n\nEnvie /menu para voltar.`);
+        
+        let msg = ehRecorrente 
+            ? `🪐✨ Lembrete recorrente *" ${info} "* configurado para toda quinta às 09h! 🗓️`
+            : `✨ Compromisso *" ${info} "* salvo para hoje! 🪐🎉`;
+        
+        return ctx.reply(msg + '\n\nEnvie /menu para voltar.');
+    }
+
+    if (t.startsWith('editar:')) {
+        const partes = t.replace('editar:', '').split(':');
+        const index = parseInt(partes[0].trim());
+        const novoTexto = partes[1] ? partes[1].trim() : '';
+        
+        if (dados.agenda[index]) {
+            dados.agenda[index].titulo = novoTexto;
+            salvarDados();
+            return ctx.reply(`✏️ Compromisso atualizado com sucesso!\n\nEnvie /menu para voltar.`);
+        } else {
+            return ctx.reply(`⚠️ Índice inválido para edição.`);
+        }
     }
 });
 
@@ -83,19 +114,19 @@ bot.action('menu_hoje', async (ctx) => {
 
 bot.action('menu_marcar', async (ctx) => {
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText('🪐 *Como marcar:*\n\nDigite no chat:\n`marcar: [nome do compromisso]`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText('🪐 *Como marcar:*\n\nDigite no chat:\n`marcar: [nome do compromisso]`\n\n*(Ex: `marcar: Reunião toda quinta`)*', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_livres', async (ctx) => {
     const ocupados = dados.agenda.filter(i => i.data === getDataHoje()).map(i => i.hora);
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText(`🕒 Horários ocupados: ${ocupados.length > 0 ? ocupados.join(', ') : 'Nenhum'}.\n✨ O resto está livre! 🌌`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText(`🕒 Horários ocupados hoje: ${ocupados.length > 0 ? ocupados.join(', ') : 'Nenhum'}.\n✨ O resto está livre! 🌌`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_todos', async (ctx) => {
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
     if (dados.agenda.length === 0) return ctx.editMessageText('🌌 Agenda vazia!', Markup.inlineKeyboard(botoes));
-    let msg = '📋 *Todos os compromissos:*\n\n' + dados.agenda.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.data})`).join('\n');
+    let msg = '📋 *Todos os compromissos e lembretes:*\n\n' + dados.agenda.map((i, idx) => `${idx + 1}. ✨ ${i.titulo} (${i.data})`).join('\n');
     await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
@@ -130,7 +161,7 @@ bot.action('menu_editar', async (ctx) => {
 bot.action(/edit_(\d+)/, async (ctx) => {
     const index = parseInt(ctx.match[1]);
     const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
-    await ctx.editMessageText(`✏️ Para alterar, digite:\n\`editar:${index}: [novo nome]\``, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+    await ctx.editMessageText(`✏️ Para alterar, digite no chat:\n\`editar:${index}: [novo nome]\``, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('voltar_menu', async (ctx) => {
