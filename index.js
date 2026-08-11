@@ -26,6 +26,7 @@ function painelMenu() {
     return Markup.inlineKeyboard([
         [Markup.button.callback('📅 Meus compromissos de hoje', 'menu_hoje')],
         [Markup.button.callback('➕ Marcar compromisso', 'menu_marcar')],
+        [Markup.button.callback('🪐 Ver céu de outra data', 'menu_ceu')],
         [Markup.button.callback('⏰ Horários livres', 'menu_livres')],
         [Markup.button.callback('📋 Verificar todos os compromissos', 'menu_todos')],
         [Markup.button.callback('✏️ Editar compromissos', 'menu_editar')],
@@ -78,6 +79,19 @@ bot.on('text', async (ctx) => {
         return ctx.reply('🪐 *Painel Estelar* 🪐', painelMenu());
     }
 
+    // Buscar foto da NASA de uma data específica (Formato: ceu: AAAA-MM-DD)
+    if (t.startsWith('ceu:')) {
+        const dataDesejada = t.replace('ceu:', '').trim();
+        try {
+            const resNasa = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY&date=${dataDesejada}`);
+            const d = resNasa.data;
+            let msg = `🌌 *Céu de ${dataDesejada}:* 🪐\n\n*Título:* ${d.title}\n[Ver imagem](${d.url})\n\n_(${d.explanation ? d.explanation.substring(0, 150) + '...' : ''})_`;
+            return ctx.reply(msg, { parse_mode: 'Markdown' });
+        } catch (e) {
+            return ctx.reply('⚠️ Não consegui buscar a foto para essa data. Verifique se o formato está certo (Ex: `ceu: 2025-12-25`) e se a data não é muito antiga.');
+        }
+    }
+
     if (t.startsWith('marcar:')) {
         const info = t.replace('marcar:', '').trim();
         const ehRecorrente = info.toLowerCase().includes('toda quinta');
@@ -119,6 +133,11 @@ bot.action('menu_hoje', async (ctx) => {
     if (itens.length === 0) return ctx.editMessageText('🪐 Nenhum compromisso para hoje! Órbita livre. 🚀', Markup.inlineKeyboard(botoes));
     let msg = `📅 *Hoje (${hoje}):*\n\n` + itens.map((i, idx) => `  ${idx + 1}. ✨ *${i.titulo}* (${i.hora})`).join('\n');
     await ctx.editMessageText(msg, { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
+});
+
+bot.action('menu_ceu', async (ctx) => {
+    const botoes = [[Markup.button.callback('⬅️ Voltar ao Menu', 'voltar_menu')]];
+    await ctx.editMessageText('🪐 *Ver o céu de outra data:*\n\nDigite no chat:\n`ceu: AAAA-MM-DD`\n\n(Ex: `ceu: 2025-05-12`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(botoes) });
 });
 
 bot.action('menu_marcar', async (ctx) => {
