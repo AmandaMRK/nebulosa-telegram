@@ -83,12 +83,7 @@ bot.on('text', async (ctx) => {
                     parse_mode: 'Markdown' 
                 });
             } else {
-                return ctx.reply(`🌌 *${d.title}*\n\nEssa mídia é um vídeo ou formato especial.`, {
-                    ...Markup.inlineKeyboard([
-                        [Markup.button.url('🎬 Ver Mídia Original', d.url)]
-                    ]),
-                    parse_mode: 'Markdown'
-                });
+                return ctx.reply(`🌌 O registro de ${dataBusca} não é uma foto, é um formato de mídia diferente. Tente outra data!`);
             }
         } catch (e) { return ctx.reply('⚠️ Data inválida ou erro na busca da NASA.'); }
     }
