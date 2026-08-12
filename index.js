@@ -2,7 +2,6 @@ const { Telegraf, Markup } = require('telegraf');
 const cron = require('node-cron');
 const axios = require('axios');
 const fs = require('fs');
-const base64 = require('base-64');
 
 require('dotenv').config();
 
@@ -21,11 +20,6 @@ function salvarDados() {
 
 function getDataHoje() {
     return new Date().toLocaleDateString('pt-BR');
-}
-
-let auth = '';
-if (process.env.ASTRONOMY_API_ID && process.env.ASTRONOMY_API_SECRET) {
-    auth = base64.encode(`${process.env.ASTRONOMY_API_ID}:${process.env.ASTRONOMY_API_SECRET}`);
 }
 
 function painelMenu() {
@@ -115,16 +109,13 @@ bot.action('menu_marcar', async (ctx) => {
 
 bot.action('menu_astronomia', async (ctx) => {
     try {
-        if (!auth) {
-            return ctx.editMessageText('⚠️ Credenciais da Astronomy API ausentes.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]));
-        }
-        const res = await axios.get('https://api.astronomyapi.com/api/v2/studio/moon-phase', {
-            headers: { 'Authorization': `Basic ${auth}` },
-            params: { format: 'png', observer: { latitude: -23.55, longitude: -46.63, date: new Date().toISOString().split('T')[0] } }
-        });
+        const resNasa = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=${process.env.NASA_API_KEY}`);
+        const d = resNasa.data;
         await ctx.deleteMessage();
-        await ctx.replyWithPhoto(res.data.data.imageUrl, { caption: "🌙 *Fase da Lua hoje:*", parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
-    } catch (e) { await ctx.editMessageText('⚠️ Erro ao consultar a fase da lua.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]])); }
+        await ctx.replyWithPhoto(d.url, { caption: `🔭 *Astronomia e Céu:* ${d.title}\n\n${d.explanation.substring(0, 250)}...`, parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    } catch (e) { 
+        await ctx.editMessageText('⚠️ Erro ao consultar os eventos do céu.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]])); 
+    }
 });
 
 bot.action('menu_ceu', async (ctx) => {
