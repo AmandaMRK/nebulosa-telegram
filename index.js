@@ -52,7 +52,11 @@ cron.schedule('0 8 * * *', async () => {
         }
 
         const msg = `🌌 *Bom dia, Amanda!* 🪐\n\n${aviso}\n\n*NASA:* ${d.title}\n\n${d.explanation.substring(0, 200)}...${agendaMsg}`;
-        await bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
+        if (d.media_type === 'image') {
+            await bot.telegram.sendPhoto(MEU_CHAT_ID, d.url, { caption: msg, parse_mode: 'Markdown' });
+        } else {
+            await bot.telegram.sendMessage(MEU_CHAT_ID, msg + `\n\n[Ver Mídia](${d.url})`, { parse_mode: 'Markdown' });
+        }
     } catch (e) {
         console.error("Erro no radar:", e);
     }
@@ -71,8 +75,11 @@ bot.on('text', async (ctx) => {
         try {
             const res = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=${process.env.NASA_API_KEY}&date=${t.replace('ceu:', '').trim()}`);
             const d = res.data;
-            if (d.media_type === 'image') return ctx.replyWithPhoto(d.url, { caption: `🌌 ${d.title}\n\n${d.explanation.substring(0, 300)}...`, parse_mode: 'Markdown' });
-            return ctx.reply(`${d.title}\n${d.url}`);
+            if (d.media_type === 'image') {
+                return ctx.replyWithPhoto(d.url, { caption: `🌌 ${d.title}\n\n${d.explanation.substring(0, 300)}...`, parse_mode: 'Markdown' });
+            } else {
+                return ctx.reply(`🌌 *${d.title}* (Mídia em vídeo/outro formato):\n\n[Clique aqui para ver a mídia](${d.url})`, { parse_mode: 'Markdown' });
+            }
         } catch (e) { return ctx.reply('⚠️ Data inválida ou erro na busca da NASA.'); }
     }
 
@@ -107,14 +114,19 @@ bot.action('menu_marcar', async (ctx) => {
     await ctx.editMessageText('➕ Para marcar, digite no chat:\n`marcar: O seu compromisso`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
 });
 
+// Botão de astronomia agora usa a NASA com segurança total
 bot.action('menu_astronomia', async (ctx) => {
     try {
         const resNasa = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=${process.env.NASA_API_KEY}`);
         const d = resNasa.data;
         await ctx.deleteMessage();
-        await ctx.replyWithPhoto(d.url, { caption: `🔭 *Astronomia e Céu:* ${d.title}\n\n${d.explanation.substring(0, 250)}...`, parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+        if (d.media_type === 'image') {
+            await ctx.replyWithPhoto(d.url, { caption: `🔭 *Astronomia do Dia:* ${d.title}\n\n${d.explanation.substring(0, 250)}...`, parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+        } else {
+            await ctx.reply(`🔭 *Astronomia do Dia:* ${d.title}\n\n[Ver Mídia](${d.url})`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+        }
     } catch (e) { 
-        await ctx.editMessageText('⚠️ Erro ao consultar os eventos do céu.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]])); 
+        await ctx.editMessageText('⚠️ Erro ao consultar a astronomia.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]])); 
     }
 });
 
