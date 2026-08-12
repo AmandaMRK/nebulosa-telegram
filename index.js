@@ -23,7 +23,6 @@ function getDataHoje() {
     return new Date().toLocaleDateString('pt-BR');
 }
 
-// Autenticação segura da Astronomy API
 let auth = '';
 if (process.env.ASTRONOMY_API_ID && process.env.ASTRONOMY_API_SECRET) {
     auth = base64.encode(`${process.env.ASTRONOMY_API_ID}:${process.env.ASTRONOMY_API_SECRET}`);
@@ -31,17 +30,14 @@ if (process.env.ASTRONOMY_API_ID && process.env.ASTRONOMY_API_SECRET) {
 
 function painelMenu() {
     return Markup.inlineKeyboard([
-        [Markup.button.callback('📅 Meus compromissos de hoje', 'menu_hoje')],
-        [Markup.button.callback('➕ Marcar compromisso', 'menu_marcar')],
-        [Markup.button.callback('🔭 Eventos do Céu (Lua)', 'menu_astronomia')],
-        [Markup.button.callback('🪐 Foto do Dia (NASA)', 'menu_ceu')],
-        [Markup.button.callback('📋 Verificar todos', 'menu_todos')],
-        [Markup.button.callback('✏️ Editar compromissos', 'menu_editar')],
-        [Markup.button.callback('🗑️ Apagar compromissos', 'menu_apagar')]
+        [Markup.button.callback('📅 Hoje', 'menu_hoje'), Markup.button.callback('➕ Marcar', 'menu_marcar')],
+        [Markup.button.callback('🔭 Lua/Astronomia', 'menu_astronomia'), Markup.button.callback('🪐 Foto NASA', 'menu_ceu')],
+        [Markup.button.callback('📋 Todos', 'menu_todos'), Markup.button.callback('✏️ Editar', 'menu_editar')],
+        [Markup.button.callback('🗑️ Apagar', 'menu_apagar')]
     ]);
 }
 
-// Notificação Diária da NASA + Compromissos às 08:00
+// Radar Astronômico proativo (Todo dia às 08:00)
 cron.schedule('0 8 * * *', async () => {
     if (!MEU_CHAT_ID) return;
     try {
@@ -49,71 +45,64 @@ cron.schedule('0 8 * * *', async () => {
         const d = resNasa.data;
         
         const hoje = getDataHoje();
-        dados.agenda = dados.agenda.filter(i => i.data === hoje || i.recorrente === true);
-        salvarDados();
-
         const itens = dados.agenda.filter(i => i.data === hoje);
-        let agendaMsg = itens.length > 0 ? `\n\n📅 *Hoje:* \n` + itens.map((i, idx) => `  ${idx + 1}. ✨ *${i.titulo}* (${i.hora})`).join('\n') : `\n\n📅 *Agenda livre hoje!* 🥳🪐`;
+        let agendaMsg = itens.length > 0 ? `\n\n📅 *Compromissos de hoje:* \n` + itens.map((i, idx) => `  ${idx + 1}. ✨ *${i.titulo}*`).join('\n') : `\n\n📅 *Agenda livre hoje!* 🥳🪐`;
 
-        let legenda = `🌌 *Bom dia, Amanda!* 🪐\n\n*NASA:* ${d.title}\n\n${d.explanation ? d.explanation.substring(0, 300) + '...' : ''}${agendaMsg}`;
-
-        if (d.media_type === 'image') {
-            await bot.telegram.sendPhoto(MEU_CHAT_ID, d.url, { caption: legenda, parse_mode: 'Markdown' });
+        let aviso = "🔭 *Radar Astronômico:* ";
+        if (d.explanation.toLowerCase().includes('meteor') || d.explanation.toLowerCase().includes('shower')) {
+            aviso += "Hoje há menções a chuvas de meteoros! Fique de olho no céu ☄️";
+        } else if (d.explanation.toLowerCase().includes('eclipse')) {
+            aviso += "Temos um eclipse no radar! 🌑";
         } else {
-            await bot.telegram.sendMessage(MEU_CHAT_ID, legenda + `\n\n[Ver mídia](${d.url})`, { parse_mode: 'Markdown' });
+            aviso += "Céu calmo hoje, aproveite para observar as estrelas ✨";
         }
-    } catch (e) {}
+
+        const msg = `🌌 *Bom dia, Amanda!* 🪐\n\n${aviso}\n\n*NASA:* ${d.title}\n\n${d.explanation.substring(0, 200)}...${agendaMsg}`;
+        await bot.telegram.sendMessage(MEU_CHAT_ID, msg, { parse_mode: 'Markdown' });
+    } catch (e) {
+        console.error("Erro no radar:", e);
+    }
 });
 
 bot.command(['start', 'menu', 'ajuda'], async (ctx) => {
-    return ctx.reply('🪐 *Painel de Controle Estelar - Nebulosa* 🪐\n\nEscolha uma opção abaixo:', painelMenu());
+    return ctx.reply('🪐 *Painel Estelar - Nebulosa* 🪐\nEscolha uma opção:', painelMenu());
 });
 
 bot.on('text', async (ctx) => {
     const t = ctx.message.text.toLowerCase().trim();
 
-    if (t === 'menu' || t === 'ajuda') {
-        return ctx.reply('🪐 *Painel Estelar* 🪐', painelMenu());
-    }
+    if (t === 'menu' || t === 'ajuda') return ctx.reply('🪐 *Painel Estelar* 🪐', painelMenu());
 
     if (t.startsWith('ceu:')) {
-        const dataDesejada = t.replace('ceu:', '').trim();
         try {
-            const resNasa = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=${process.env.NASA_API_KEY}&date=${dataDesejada}`);
-            const d = resNasa.data;
-            let legenda = `🌌 *Céu de ${dataDesejada}:* 🪐\n\n*Título:* ${d.title}\n\n${d.explanation ? d.explanation.substring(0, 300) + '...' : ''}`;
-            
-            if (d.media_type === 'image') {
-                return ctx.replyWithPhoto(d.url, { caption: legenda, parse_mode: 'Markdown' });
-            } else {
-                return ctx.reply(legenda + `\n\n[Ver mídia](${d.url})`, { parse_mode: 'Markdown' });
-            }
-        } catch (e) {
-            return ctx.reply('⚠️ Erro ao buscar a foto. Use o formato `ceu: AAAA-MM-DD` e verifique se a data está correta.');
-        }
+            const res = await axios.get(`https://api.nasa.gov/planetary/apod?api_key=${process.env.NASA_API_KEY}&date=${t.replace('ceu:', '').trim()}`);
+            const d = res.data;
+            if (d.media_type === 'image') return ctx.replyWithPhoto(d.url, { caption: `🌌 ${d.title}\n\n${d.explanation.substring(0, 300)}...`, parse_mode: 'Markdown' });
+            return ctx.reply(`${d.title}\n${d.url}`);
+        } catch (e) { return ctx.reply('⚠️ Data inválida ou erro na busca da NASA.'); }
     }
 
     if (t.startsWith('marcar:')) {
-        const info = t.replace('marcar:', '').trim();
-        const ehRecorrente = info.toLowerCase().includes('toda quinta');
-        dados.agenda.push({ titulo: info, data: ehRecorrente ? 'Toda Quinta' : getDataHoje(), hora: '09:00', recorrente: ehRecorrente });
+        const textoCompromisso = t.replace('marcar:', '').trim();
+        dados.agenda.push({ titulo: textoCompromisso, data: getDataHoje(), hora: '09:00' });
         salvarDados();
-        return ctx.reply(ehRecorrente ? `🪐✨ Lembrete "${info}" configurado!` : `🪐✨ Compromisso "${info}" salvo!`);
+        return ctx.reply(`✨ Compromisso "${textoCompromisso}" salvo com sucesso para hoje!`);
     }
 
     if (t.startsWith('editar:')) {
-        const partes = t.replace('editar:', '').split(':');
-        const index = parseInt(partes[0].trim());
-        const novoTexto = partes[1] ? partes[1].trim() : '';
-        if (dados.agenda[index]) {
-            dados.agenda[index].titulo = novoTexto;
-            salvarDados();
-            return ctx.reply('✏️ Compromisso atualizado!');
+        const p = t.replace('editar:', '').split(':');
+        const index = parseInt(p[0].trim());
+        const novoTexto = p[1] ? p[1].trim() : '';
+        if (dados.agenda[index]) { 
+            dados.agenda[index].titulo = novoTexto; 
+            salvarDados(); 
+            return ctx.reply('✏️ Compromisso editado com sucesso!'); 
+        } else {
+            return ctx.reply('⚠️ Índice não encontrado para edição.');
         }
     }
 });
 
-// Ações dos Botões do Menu
 bot.action('menu_hoje', async (ctx) => {
     const itens = dados.agenda.filter(i => i.data === getDataHoje());
     const msg = itens.length === 0 ? '🪐 Órbita livre hoje!' : `📅 *Hoje:* ` + itens.map(i => i.titulo).join(', ');
@@ -121,7 +110,7 @@ bot.action('menu_hoje', async (ctx) => {
 });
 
 bot.action('menu_marcar', async (ctx) => {
-    await ctx.editMessageText('➕ Para marcar um compromisso, digite no chat:\n`marcar: O seu compromisso`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    await ctx.editMessageText('➕ Para marcar, digite no chat:\n`marcar: O seu compromisso`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
 });
 
 bot.action('menu_astronomia', async (ctx) => {
@@ -131,46 +120,39 @@ bot.action('menu_astronomia', async (ctx) => {
         }
         const res = await axios.get('https://api.astronomyapi.com/api/v2/studio/moon-phase', {
             headers: { 'Authorization': `Basic ${auth}` },
-            params: { format: 'png', style: { moonStyle: 'default' }, observer: { latitude: -23.55, longitude: -46.63, date: new Date().toISOString().split('T')[0] } }
+            params: { format: 'png', observer: { latitude: -23.55, longitude: -46.63, date: new Date().toISOString().split('T')[0] } }
         });
-        
-        const imageUrl = res.data.data.imageUrl;
         await ctx.deleteMessage();
-        await ctx.replyWithPhoto(imageUrl, { caption: "🌙 *Fase da Lua hoje:*", parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
-    } catch (e) {
-        await ctx.editMessageText('⚠️ Erro ao consultar a fase da lua.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]));
-    }
+        await ctx.replyWithPhoto(res.data.data.imageUrl, { caption: "🌙 *Fase da Lua hoje:*", parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    } catch (e) { await ctx.editMessageText('⚠️ Erro ao consultar a fase da lua.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]])); }
 });
 
 bot.action('menu_ceu', async (ctx) => {
-    await ctx.editMessageText('🪐 Digite no chat a data desejada:\n`ceu: AAAA-MM-DD`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    await ctx.editMessageText('🪐 Digite no chat:\n`ceu: AAAA-MM-DD`', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
 });
 
 bot.action('menu_todos', async (ctx) => {
-    if (dados.agenda.length === 0) return ctx.editMessageText('📋 Nenhum compromisso cadastrado.', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]));
-    let lista = dados.agenda.map((i, idx) => `[${idx}] ${i.titulo} (${i.data})`).join('\n');
-    await ctx.editMessageText(`📋 *Todos os compromissos:*\n\n${lista}`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    const lista = dados.agenda.map((i, idx) => `[${idx}] ${i.titulo} (${i.data})`).join('\n') || 'Nenhum compromisso.';
+    await ctx.editMessageText(`📋 *Agenda Completa:*\n\n${lista}`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
 });
 
 bot.action('menu_editar', async (ctx) => {
-    await ctx.editMessageText('✏️ Para editar, digite no chat:\n`editar: número : novo texto`\n(Ex: `editar: 0 : Reunião importante`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
+    await ctx.editMessageText('✏️ Para editar, digite no chat:\n`editar: número : novo texto`\n(Ex: `editar: 0 : Reunião`)', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]) });
 });
 
 bot.action('menu_apagar', async (ctx) => {
-    const botoes = [[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]];
-    if (dados.agenda.length === 0) return ctx.editMessageText('🗑️ Nada para apagar!', Markup.inlineKeyboard(botoes));
-    let listaBotoes = dados.agenda.map((item, idx) => [Markup.button.callback(`🗑️ [${idx}] ${item.titulo}`, `del_${idx}`)]);
+    if (dados.agenda.length === 0) return ctx.editMessageText('🗑️ Nada para apagar!', Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]));
+    const listaBotoes = dados.agenda.map((i, idx) => [Markup.button.callback(`🗑️ [${idx}] ${i.titulo}`, `del_${idx}`)]);
     listaBotoes.push([Markup.button.callback('⬅️ Voltar', 'voltar_menu')]);
-    await ctx.editMessageText('🗑️ Qual deseja apagar?', Markup.inlineKeyboard(listaBotoes));
+    await ctx.editMessageText('🗑️ Qual compromisso deseja apagar?', Markup.inlineKeyboard(listaBotoes));
 });
 
 bot.action(/del_(\d+)/, async (ctx) => {
     const index = parseInt(ctx.match[1]);
-    const botoes = [[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]];
     if (dados.agenda[index]) {
         const removido = dados.agenda.splice(index, 1);
         salvarDados();
-        await ctx.editMessageText(`✨ "${removido[0].titulo}" apagado com sucesso!`, Markup.inlineKeyboard(botoes));
+        await ctx.editMessageText(`✨ "${removido[0].titulo}" apagado com sucesso!`, Markup.inlineKeyboard([[Markup.button.callback('⬅️ Voltar', 'voltar_menu')]]));
     }
 });
 
@@ -179,4 +161,4 @@ bot.action('voltar_menu', async (ctx) => {
 });
 
 bot.launch();
-console.log('Nebulosa Completa rodando!');
+console.log('Nebulosa Completa 100% rodando!');
